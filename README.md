@@ -123,7 +123,9 @@ Everything below is driven by **your car's own steady-cruise data** (the coach's
 - **Range vs rated:** projected range at your pace minus the car's rated range. Positive means you're beating the car's estimate.
 - **Best speed:** your most efficient 5-mph band, plus how many miles slowing to it would add right now.
 - **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart. Miles count from the first odometer reading after you set it, and the goal clears itself after a day.
-- **Drive view** (header button): shows only the Cockpit with a compact header and larger numbers, and keeps the screen on. On a phone mounted sideways, and on the car's screen, the gauge sits on the left and the tip, tiles, power bar and accelerator stack on the right, so nothing important is below the fold. The car's screen gets bigger numbers. The screen only rewrites readings that changed.
+- **Drive view** (header button): shows only the Cockpit with a compact header and larger numbers, and keeps the screen on. The screen only rewrites readings that changed.
+  - **Cluster dials:** Drive view (and the car's screen, always) swaps the gauge and power bar for two needle dials, like a car's instrument cluster. The efficiency dial is the same Wh/mi gauge with tick marks and a needle. The speed dial shows your speed in the middle, and its needle is the power bar bent round: regen left of zero, power used to the right, with the same green and blue efficient zones, red past hard acceleration, and a dashed amber mark at the car's regen limit. Under the speed: Wh/mi (or Parked, Charging…) and the power, or the charge's progress while charging.
+  - On a phone mounted sideways, and on the car's screen, the efficiency dial sits on the left, the tiles in the middle and the speed dial on the right, with the tip above and the accelerator and guide below. A phone held upright shows the speed dial only, with the tiles under it. The car's screen gets bigger numbers.
 
 ## Range coach
 
@@ -173,7 +175,7 @@ Open the same address in the car's browser. It has no Web Serial or Bluetooth, s
 
 - Tessie starts on its own when the page opens. The first time, it opens Setup for the token (the car's browser keeps its own storage, separate from the phone's). **Connect car** then means Tessie.
 - Hidden there, since they need the adapter: the accelerator card, where the energy went, the speed curve, the brick heatmap, and the adapter settings. Drives are scored from Tessie and kept in the car's browser.
-- Buttons and tabs get bigger touch targets. Dark by default (**Setup → Theme** to change), and Drive view goes side by side.
+- Buttons and tabs get bigger touch targets. Dark by default (**Setup → Theme** to change). The Cockpit shows the cluster dials (see Drive view), and Drive view lays them out side by side.
 - Not yet checked on a real car: whether this firmware's browser runs the page (it needs a recent Chromium) and whether it stays usable while driving.
 
 ## Auto-connect (v21)

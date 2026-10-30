@@ -305,6 +305,8 @@
   const setTone = (x, t) => data(x, "tone", t);
   const html = (x, h) => { const el = node(x); if (el.innerHTML !== h) el.innerHTML = h; };
   const hide = (x, h) => { const el = node(x); if (el.hidden !== h) el.hidden = h; };
+  const attr = (x, k, v) => { const el = node(x); if (el.getAttribute(k) !== v) el.setAttribute(k, v); };
+  const rot = (x, deg) => { const el = node(x), s = `rotate(${Math.round(deg * 10) / 10}deg)`; if (el.style.transform !== s) el.style.transform = s; };
   const set = (id, v, unit) => html(id, v === "—" ? "—" : `${v}${unit ? `<small>${unit}</small>` : ""}`);
   const kwTxt = kw => (Math.abs(kw) < 10 ? Math.abs(kw).toFixed(1) : String(Math.round(Math.abs(kw))));
   // Charging: power in, the charge limit and the time to reach it. Tessie says so outright; from the adapter they come
@@ -992,7 +994,7 @@
     });
   });
   showTab(cfg.tab);
-  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) showTab("cockpit"); syncAwake(); }
+  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); document.body.classList.toggle("cluster", on || inCar); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) showTab("cockpit"); syncAwake(); }
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
   setDrive(!!cfg.drive);
   // Drive view side by side on a phone on its side, and on the car's screen: wide, but too tall for that media query.
@@ -1008,12 +1010,15 @@
   const polar = (deg, r = G.r) => { const a = (deg * Math.PI) / 180; return [G.cx + r * Math.cos(a), G.cy + r * Math.sin(a)]; };
   const arcPath = (d0, d1, r = G.r) => { const [x0, y0] = polar(d0, r), [x1, y1] = polar(d1, r); return `M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${d1 - d0 > 180 ? 1 : 0} 1 ${x1.toFixed(1)},${y1.toFixed(1)}`; };
   const ARC_LEN = (Math.PI * G.r * G.sweep) / 180;
+  // Cluster look (Drive view, the car's screen): tick marks and a needle, shown by CSS only there.
+  const tickLine = (deg, big) => { const [x0, y0] = polar(deg, G.r + 10), [x1, y1] = polar(deg, G.r - (big ? 6 : -3)); return `<line class="cl tick${big ? " major" : ""}" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"/>`; };
   function buildGauge(max, target) {
     G.max = max; G.target = target;
     const deg = v => G.start + (Math.max(0, Math.min(max, v)) / max) * G.sweep;
     const z1 = target || max * 0.45, z2 = Math.min(max, z1 * 1.35);
     let t = "";
     for (let v = 0; v <= max; v += 100) { const [x, y] = polar(deg(v), G.r - 24); t += `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle">${v}</text>`; }
+    for (let v = 0; v <= max; v += 25) t += tickLine(deg(v), v % 100 === 0);
     const [tx0, ty0] = polar(deg(z1), G.r - 13), [tx1, ty1] = polar(deg(z1), G.r + 13);
     $("effGauge").innerHTML = `
       <path class="arcbg" d="${arcPath(G.start, G.start + G.sweep)}"/>
@@ -1022,7 +1027,8 @@
       <path class="zone" d="${arcPath(deg(z2), deg(max), G.r + 14)}" stroke="var(--bad)"/>
       <path class="val" id="gVal" d="${arcPath(G.start, G.start + G.sweep)}" stroke="var(--regen)" stroke-dasharray="0 ${ARC_LEN}"/>
       ${target ? `<line class="tgt" x1="${tx0.toFixed(1)}" y1="${ty0.toFixed(1)}" x2="${tx1.toFixed(1)}" y2="${ty1.toFixed(1)}"/>` : ""}
-      ${t}`;
+      ${t}
+      <g class="cl"><polygon class="needle" id="gNeedle" points="${G.cx + G.r - 8},${G.cy} ${G.cx},${G.cy - 4.5} ${G.cx - 14},${G.cy} ${G.cx},${G.cy + 4.5}"/><circle class="hub" cx="${G.cx}" cy="${G.cy}" r="7"/></g>`;
     G.built = true;
   }
   const gaugeDeg = v => G.start + (Math.max(0, Math.min(G.max, v)) / G.max) * G.sweep;
@@ -1040,9 +1046,11 @@
     } else { whSmooth = null; kwE = null; mphE = null; }
     const v = U.wh(whSmooth), el = $("inst"), st = $("effState");
     const tone = v == null || !target ? "" : v <= target ? "good" : v <= target * 1.35 ? "warn" : "bad";
-    const val = $("gVal");
-    val.setAttribute("stroke-dasharray", `${v != null && v > 0 ? ((Math.min(G.max, v) / G.max) * ARC_LEN).toFixed(1) : 0} ${ARC_LEN}`);
-    val.setAttribute("stroke", tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : "var(--regen)");
+    const cl = document.body.classList.contains("cluster"), val = $("gVal");
+    if (!cl) {                                               // the cluster shows a needle instead (below)
+      val.setAttribute("stroke-dasharray", `${v != null && v > 0 ? ((Math.min(G.max, v) / G.max) * ARC_LEN).toFixed(1) : 0} ${ARC_LEN}`);
+      val.setAttribute("stroke", tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : "var(--regen)");
+    }
     if (!live) { txt(el, "—"); setTone(el, ""); txt("instSub", `${U.e} now`); txt(st, app.source ? "Waiting for the car" : "Connect the car"); setTone(st, ""); }
     else if (!moving) {
       const c = app.chg, kw = app.pEma ?? 0;
@@ -1059,6 +1067,15 @@
     if (healthOn() && st.dataset.tone) { txt(st, "Health test prep"); setTone(st, ""); }   // using energy is the point
     const word = String(!/^\d+$/.test(el.textContent)); if (el.dataset.word !== word) el.dataset.word = word;          // "Regen", "Parked"… set smaller than a number
     txt("effTarget", target ?`Target ${target} ${U.e}${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(U.wh(tripAvg))}` : ""}` : "");
+    if (cl) {
+      rot("gNeedle", gaugeDeg(v > 0 ? v : 0));
+      // Speed dial: speed in the middle; under it Wh/mi (or Parked, Charging…) and the power, or the charge's progress.
+      const c = app.chg, p = app.pEma;
+      txt("sSpd", live ? String(Math.round(U.speed(mph))) : "—"); txt("sSpdU", U.s);
+      txt("sEff", el.dataset.word === "true" ? el.textContent : `${el.textContent} ${U.e}`); setTone("sEff", el.dataset.tone);
+      txt("sSub", !live || p == null ? "" : c ? [`${kwTxt(c.kw)} kW in`, chgEta(c)].filter(Boolean).join(" · ")
+        : `${kwTxt(p)} kW${p < -0.3 ? " regen" : ""}${target ? ` · target ${target}` : ""}`);
+    }
   }
 
   // Mile by mile (or km by km): Wh/mi of each of the last 10 whole miles of this trip plus the one in progress, colored vs target.
@@ -1098,10 +1115,30 @@
   const FZ = 28, flow = { v: 0, last: performance.now(), up: 0, dn: 0 };
   const fFrac = (v, up, dn) => (v >= 0 ? Math.sqrt(Math.min(1, v / up)) : Math.sqrt(Math.min(1, -v / dn)));
   const fPos = (v, up, dn) => (v >= 0 ? FZ + (100 - FZ) * fFrac(v, up, dn) : FZ - FZ * fFrac(v, up, dn));
+  const sDeg = (v, up, dn) => G.start + (fPos(v, up, dn) / 100) * G.sweep;    // the cluster's speed dial: same scale, bent round
   function flowTicks(up, dn) {
     if (flow.up === up && flow.dn === dn) return; flow.up = up; flow.dn = dn;
-    $("fTicks").innerHTML = [-dn, -20, 0, 20, 50, 100, up].filter((v, i, a) => a.indexOf(v) === i && v <= up && v >= -dn)
-      .map(v => `<span style="left:${fPos(v, up, dn)}%">${v < 0 ? "−" + -v : v}${v === up ? " kW" : ""}</span>`).join("");
+    const labels = [-dn, -20, 0, 20, 50, 100, up].filter((v, i, a) => a.indexOf(v) === i && v <= up && v >= -dn);
+    $("fTicks").innerHTML = labels.map(v => `<span style="left:${fPos(v, up, dn)}%">${v < 0 ? "−" + -v : v}${v === up ? " kW" : ""}</span>`).join("");
+    const minor = [-60, -40, -10, 10, 30, 40, 75, ...Array.from({ length: up / 50 - 2 }, (_, i) => 150 + i * 50)].filter(v => v >= -dn && v <= up && !labels.includes(v));
+    $("spdGauge").innerHTML = `<circle class="disc" cx="${G.cx}" cy="${G.cy}" r="48"/>
+      ${["sZoneR", "sZoneU", "sZoneW"].map((id, i) => `<path class="zone" id="${id}" stroke="var(--${["regen", "info", "bad"][i]})" visibility="hidden"/>`).join("")}
+      ${labels.map(v => tickLine(sDeg(v, up, dn), true)).join("")}${minor.map(v => tickLine(sDeg(v, up, dn), false)).join("")}
+      ${labels.map(v => { const [x, y] = polar(sDeg(v, up, dn), G.r - 24); return `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle">${v < 0 ? "−" + -v : v}</text>`; }).join("")}
+      <line class="lim" id="sLim" x1="${G.cx + G.r - 4}" y1="${G.cy}" x2="${G.cx + G.r + 16}" y2="${G.cy}" visibility="hidden"/>
+      <polygon class="needle" id="sNeedle" points="${G.cx + G.r - 6},${G.cy} ${G.cx + 52},${G.cy - 4} ${G.cx + 52},${G.cy + 4}"/>
+      <text class="dir r" x="10" y="196">◀ REGEN</text><text class="dir u" x="230" y="196" text-anchor="end">POWER ▶</text>`;
+  }
+  // Speed dial, every frame: the needle shows the bar's smoothed power, with the same efficient zones (green regen,
+  // blue power), red past hard acceleration, and the car's regen limit.
+  function spdFrame(v, tg, moving, lim, up, dn) {
+    rot("sNeedle", sDeg(v, up, dn));
+    const z = moving ? [[-tg.regenGentle, 0], [0, tg.upKW], [Math.min(up, tg.upKW * 1.8), up]] : [];
+    ["sZoneR", "sZoneU", "sZoneW"].forEach((id, i) => {
+      const r = z[i], on = !!r && r[1] > r[0];
+      attr(id, "visibility", on ? "visible" : "hidden"); if (on) attr(id, "d", arcPath(sDeg(r[0], up, dn), sDeg(r[1], up, dn), G.r + 14));
+    });
+    attr("sLim", "visibility", lim == null ? "hidden" : "visible"); if (lim != null) rot("sLim", sDeg(-lim, up, dn));
   }
   function flowFrame(now) {
     const dt = Math.min(0.1, (now - flow.last) / 1000); flow.last = now;
@@ -1113,6 +1150,9 @@
     const up = Math.max(150, Math.ceil((L.maxDischargeKW > 40 && L.maxDischargeKW < 400 ? L.maxDischargeKW : 200) / 50) * 50), dn = 80;
     flowTicks(up, dn);
     const v = flow.v, tg = app.tgt, moving = live && tg && tg.mph > 3;
+    // The car's regen limit (lower when the pack is cold or nearly full), when it's inside the scale.
+    const lim = L.maxRegenKW > 1 && L.maxRegenKW < dn ? Math.round(L.maxRegenKW) : null;
+    if (document.body.classList.contains("cluster")) { spdFrame(v, tg, moving, lim, up, dn); return; }   // the dial stands in for the bar
     $("fUse").style.transform = `scaleX(${v > 0 ? fFrac(v, up, dn) : 0})`;
     $("fRegen").style.transform = `scaleX(${v < 0 ? fFrac(v, up, dn) : 0})`;
     const zu = $("fZoneU"), zr = $("fZoneR"); if (zu.hidden !== !moving) zu.hidden = zr.hidden = !moving;
@@ -1120,8 +1160,7 @@
       zu.style.left = `${FZ}%`; zu.style.width = `${fPos(tg.upKW, up, dn) - FZ}%`;
       const l = fPos(-tg.regenGentle, up, dn); zr.style.left = `${l}%`; zr.style.width = `${FZ - l}%`;
     }
-    // The car's regen limit (lower when the pack is cold or nearly full), when it's inside the bar's scale.
-    const lim = L.maxRegenKW > 1 && L.maxRegenKW < dn ? Math.round(L.maxRegenKW) : null, fl = $("fLimit");
+    const fl = $("fLimit");
     if (fl.hidden !== (lim == null)) fl.hidden = lim == null; if (lim != null) fl.style.left = `${fPos(-lim, up, dn)}%`;
     const rl = lim == null ? "◀ Regen" : `◀ Regen · max ${lim} kW`; txt("fRegenLbl", rl);
     const useTone = !moving ? "" : v <= tg.upKW ? "ok" : v <= tg.upKW * 1.8 ? "" : "way", hard = moving && -v > tg.regenGentle;

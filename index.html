@@ -149,7 +149,7 @@ h1{font:700 16px/1.2 var(--f-ui);letter-spacing:-.01em;margin:0}
 .effgauge .val{fill:none;stroke-width:18;stroke-linecap:round;transition:stroke-dasharray .45s ease,stroke .3s}
 .effgauge text{font:500 10.5px var(--f-num);fill:var(--faint)}
 .effgauge .tgt{stroke:var(--fg);stroke-width:3}
-.gcenter{position:absolute;left:0;right:0;top:33%;text-align:center;pointer-events:none}
+.gcenter{position:absolute;left:0;right:0;top:38.5%;text-align:center;pointer-events:none}
 .gnum{font:700 54px/1 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
 .gnum[data-word="true"]{font:700 32px/1.2 var(--f-ui);letter-spacing:-.01em}
 .gnum[data-tone="good"]{color:var(--regen)} .gnum[data-tone="warn"]{color:var(--warn)} .gnum[data-tone="bad"]{color:var(--bad)}
@@ -342,6 +342,32 @@ body.car.drive.side .gnum{font-size:76px} body.car.drive.side .gnum[data-word="t
 body.car.drive.side .tip{font-size:24px} body.car.drive.side .tip2{font-size:18px}
 body.car.drive.side .kpi .v{font-size:30px} body.car.drive.side .kpi .label{font-size:13px} body.car.drive.side .gval{font-size:16px}
 body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44px;min-width:60px}
+/* Cluster (Drive view and the car's screen): needle dials. The efficiency gauge gets ticks and a needle, its number below
+   the hub; a speed dial with a power needle (regen left of zero) stands in for the power bar. app.js sets .cluster. */
+.effgauge .cl, .sdial{display:none}
+body.cluster .effgauge .cl{display:inline} body.cluster .effgauge .arcbg, body.cluster .effgauge .val, body.cluster .flow{display:none}
+.effgauge .tick{stroke:var(--faint);stroke-width:1.2} .effgauge .tick.major{stroke:var(--fg);stroke-width:2}
+.effgauge .needle{fill:#ff5a3c;transform-box:view-box;transform-origin:120px 112px;transition:transform .45s ease;filter:drop-shadow(0 0 4px rgba(255,90,60,.5))}
+.effgauge .hub{fill:var(--raised);stroke:#ff5a3c;stroke-width:2}
+.spdgauge .needle{transition:none} .spdgauge .disc{fill:var(--inset);stroke:var(--line)} .spdgauge .zone{stroke-width:5}
+.spdgauge .lim{stroke:var(--warn);stroke-width:3;stroke-dasharray:3 2;transform-box:view-box;transform-origin:120px 112px}
+.spdgauge .dir{font:700 9px var(--f-num);letter-spacing:.08em} .spdgauge .dir.r{fill:var(--regen)} .spdgauge .dir.u{fill:var(--energy)}
+body.cluster .sdial{display:block;max-width:320px;margin:0 auto;width:100%}
+.sface{position:relative}
+.scenter{position:absolute;left:0;right:0;top:56%;transform:translateY(-50%);text-align:center;pointer-events:none}
+.sspd{font:700 50px/1 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.seff{font:700 18px var(--f-num)} .seff[data-tone="good"]{color:var(--regen)} .seff[data-tone="warn"]{color:var(--warn)} .seff[data-tone="bad"]{color:var(--bad)}
+body.cluster .gaugewrap .gcenter{top:63%} body.cluster .gaugewrap .gnum{font-size:40px} body.cluster .gaugewrap .gnum[data-word="true"]{font-size:26px}
+body.cluster .hbody{grid-template-columns:repeat(2,minmax(0,1fr))} body.cluster .kpis{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:640px){body.cluster:not(.side) .gaugewrap{display:none} body.cluster .hbody{grid-template-columns:minmax(0,1fr)} body.cluster .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+body.cluster.drive.side #view-cockpit{grid-template-columns:minmax(0,1fr) minmax(0,.62fr) minmax(0,1fr);grid-template-rows:auto auto auto 1fr;
+  grid-template-areas:"coach coach coach" "gauge kpis sdial" "pedal pedal pedal" "guide guide guide"}
+body.cluster.drive.side .sdial{grid-area:sdial;max-width:none;align-self:center}
+body.cluster.drive.side .kpis{grid-template-columns:minmax(0,1fr);align-self:center}
+body.cluster.drive.side .gaugewrap, body.cluster.drive.side .sdial{width:min(100%,calc((100dvh - 200px) * 1.1));justify-self:center}
+body.cluster.drive.side .gaugewrap .gnum{font-size:30px} body.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:22px} body.cluster.drive.side .sspd{font-size:40px}
+body.car.cluster.drive.side .gaugewrap .gnum{font-size:56px} body.car.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:34px}
+body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.car.cluster .seff{font-size:24px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -414,15 +440,24 @@ body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44
       <section class="card hero c7" aria-label="Efficiency">
         <div class="hbody">
           <div class="gaugewrap">
-            <svg id="effGauge" class="effgauge" viewBox="0 0 240 200" role="img" aria-label="Efficiency gauge: watt-hours per mile now against your target"></svg>
-            <div class="gcenter">
-              <div class="gnum" id="inst">—</div>
-              <div class="gunit" id="instSub">Wh/mi now</div>
+            <div class="sface">
+              <svg id="effGauge" class="effgauge" viewBox="0 0 240 200" role="img" aria-label="Efficiency gauge: watt-hours per mile now against your target"></svg>
+              <div class="gcenter">
+                <div class="gnum" id="inst">—</div>
+                <div class="gunit" id="instSub">Wh/mi now</div>
+              </div>
             </div>
             <div class="gfoot">
               <span class="gstate" id="effState" data-tone="">Waiting for the car</span>
               <span class="gtarget" id="effTarget"></span>
             </div>
+          </div>
+          <div class="sdial">
+            <div class="sface">
+              <svg id="spdGauge" class="effgauge spdgauge" viewBox="0 0 240 200" role="img" aria-label="Speed, with a needle for power: regen to the left of zero, power used to the right"></svg>
+              <div class="scenter"><div class="sspd" id="sSpd">—</div><div class="gunit" id="sSpdU">mph</div></div>
+            </div>
+            <div class="gfoot"><span class="seff" id="sEff" data-tone="">—</span><span class="gtarget" id="sSub"></span></div>
           </div>
           <div class="kpis">
             <div class="kpi"><div class="label">Trip score</div><div class="v" id="effScore">—</div><div class="sub" id="effScoreSub">this trip</div></div>
@@ -674,15 +709,15 @@ body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v37</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v38</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=37"></script>
-<script src="elm.js?v=37"></script>
-<script src="sim.js?v=37"></script>
-<script src="units.js?v=37"></script>
-<script src="coach.js?v=37"></script>
-<script src="drives.js?v=37"></script>
-<script src="stops.js?v=37"></script>
-<script src="app.js?v=37"></script>
+<script src="decode.js?v=38"></script>
+<script src="elm.js?v=38"></script>
+<script src="sim.js?v=38"></script>
+<script src="units.js?v=38"></script>
+<script src="coach.js?v=38"></script>
+<script src="drives.js?v=38"></script>
+<script src="stops.js?v=38"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

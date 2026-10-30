@@ -636,6 +636,23 @@ const test = async (name, fn) => {
     car.stop();
   });
 
+  await test("cluster: needle dials in Drive view and on the car's screen; the speed dial reads speed, Wh/mi and power", async () => {
+    const ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36 Tesla/2026.32.3";
+    const tes = fakeTessie(); Object.assign(tes.car, { speed: 80, gear: "D", power: 20 });
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 }), body = app.document.body.classList;
+    app.click("tessieBtn"); await wait(1500);
+    assert.strictEqual(body.contains("cluster"), false, "the normal Cockpit keeps today's gauge");
+    app.click("driveBtn"); await wait(600);
+    assert.strictEqual(body.contains("cluster"), true);
+    assert.deepStrictEqual([app.text("sSpd"), app.text("sSpdU")], ["80", "mph"]);
+    assert.ok(/^\d+ Wh\/mi$/.test(app.text("sEff")) && /^20 kW · target \d+$/.test(app.text("sSub")), app.text("sEff") + " | " + app.text("sSub"));
+    app.click("driveBtn"); assert.strictEqual(body.contains("cluster"), false);
+    app.stop();
+    const car = boot({ storage: { "de.tessie.v1": "tok" }, fetch: fakeTessie().fetch, scale: 20, ua }); await wait(50);
+    assert.strictEqual(car.document.body.classList.contains("cluster"), true, "always on the car's screen");
+    car.stop();
+  });
+
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);
   process.exit(fail ? 1 : 0);                             // exit explicitly: the fake adapters' streams are still ticking
 })().catch(e => { console.error(e); process.exit(1); });
