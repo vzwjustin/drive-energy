@@ -413,6 +413,8 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
         <label for="cfgBase">Brick numbering<select id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
         <label for="cfgTok">Tessie API token<input id="cfgTok" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token" style="background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:15px var(--f-body);width:100%"></label>
         <label class="check" for="cfgAwake"><input id="cfgAwake" type="checkbox"> Keep screen on while connected</label>
+        <label for="cfgAlerts">Eyes-free alerts<select id="cfgAlerts"><option value="off">Off</option><option value="vibrate">Vibrate</option><option value="sound">Sound</option><option value="both">Vibrate + sound</option></select></label>
+        <div style="display:flex;align-items:end"><button class="btn" id="alertTest" type="button">Test alert</button></div>
       </div>
       <p class="note">The Tessie token is stored on this device only. <button class="linkbtn" id="cfgTokClear" type="button">Remove token</button></p>
     </details>
@@ -435,13 +437,13 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v12</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v13</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=12"></script>
-<script src="elm.js?v=12"></script>
-<script src="sim.js?v=12"></script>
-<script src="coach.js?v=12"></script>
-<script src="drives.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="decode.js?v=13"></script>
+<script src="elm.js?v=13"></script>
+<script src="sim.js?v=13"></script>
+<script src="coach.js?v=13"></script>
+<script src="drives.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

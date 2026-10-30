@@ -46,6 +46,18 @@ On later visits, Chrome remembers the adapter, so **Connect car** skips the choo
 - **Tiles:** range at this pace, average over the last 5/15/30 mi, and power.
 - **Power flow bar:** regen to the left of zero, power used to the right, with green "efficient" zones on both sides. The label states it in words, for example "12 kW · efficient" or "35 kW regen · strong, lift earlier".
 
+## Eyes-free alerts (Settings, off by default)
+
+Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**, at most once per 15 s per kind, never while **Cruise / Autopilot on** is set, and only above 5 mph.
+
+| Signal | Meaning |
+|---|---|
+| One low tone / short buzz | Ease off: heavy pedal or a sharp lift-off |
+| Two high tones / double buzz | Lift earlier: braking with little regen, or regen at its limit |
+| Long low tone / long buzz | Pack warning: cold pack under high draw, hot pack, or low charge under high draw |
+
+Tap **Test alert** once to allow sound (browsers require a tap before audio).
+
 ## Max-range guide
 
 Everything below is driven by **your car's own steady-cruise data** (the coach's speed table at the current outside temperature), falling back to rated consumption until enough data exists.

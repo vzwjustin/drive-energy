@@ -165,6 +165,7 @@
       tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
     }, app.source === "demo" ? dt * DEMO_SPEED : dt, app.source === "demo" ? (app.simNow = (app.simNow || 0) + dt * DEMO_SPEED * 1000) : now);
     const dtSim = app.source === "demo" ? dt * DEMO_SPEED : dt;
+    if (live && (app.source === "car" || app.source === "demo")) checkAlerts(now);
     if (L.compressorKW != null) app.climateKWh = (app.climateKWh || 0) + (L.compressorKW * dtSim) / 3600;
     // Where the energy went: integrate pack power into cruising / speeding up / climate / parked, plus regen recovered.
     if (live && app.trip && app.pEma != null && app.source !== "tessie") {
@@ -610,6 +611,37 @@
   document.documentElement.style.setProperty("--z", `${FZ}%`);
   requestAnimationFrame(flowFrame);
 
+  /* ---------------- eyes-free alerts ----------------
+     Off by default. A short buzz and/or tone when a costly habit starts, so you don't have to look:
+     one low tone = ease off the pedal; two high tones = lift earlier (brake or regen at its limit); long low = pack warning.
+     Each kind fires at most once per 15 s, never while cruise/Autopilot is marked on. */
+  const ALERT_KIND = { "pedal.heavy": "ease", "pedal.sharpLift": "ease", "brake.friction": "brake", "pedal.regenAtLimit": "brake", "pack.coldDraw": "warn", "soc.lowDraw": "warn", "pack.hot": "warn" };
+  const PATTERN = { ease: { vib: [90], tones: [[392, 0.16]] }, brake: { vib: [60, 70, 60], tones: [[784, 0.1], [784, 0.1]] }, warn: { vib: [250], tones: [[262, 0.45]] } };
+  let audioCtx = null; const lastAlert = {}; let prevKinds = new Set();
+  function unlockAudio() { try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch (e) {} }
+  function fireAlert(type, force) {
+    const mode = cfg.alerts || "off"; if (mode === "off" && !force) return;
+    const p = PATTERN[type]; if (!p) return;
+    if ((mode === "vibrate" || mode === "both" || force) && navigator.vibrate) { try { navigator.vibrate(p.vib); } catch (e) {} }
+    if ((mode === "sound" || mode === "both" || force) && audioCtx) {
+      let t = audioCtx.currentTime + 0.02;
+      for (const [f, d] of p.tones) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = "sine"; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + d + 0.02); t += d + 0.08;
+      }
+    }
+  }
+  function checkAlerts(now) {
+    const st = app.coach.state, kinds = new Set((st.list || []).map(q => q.kind));
+    if (!st.cruiseOn && (L.speedMph ?? 0) > 5) for (const k of kinds) {
+      const type = ALERT_KIND[k];
+      if (type && !prevKinds.has(k) && !(now - (lastAlert[k] || 0) < 15000)) { lastAlert[k] = now; fireAlert(type); }
+    }
+    prevKinds = kinds;
+  }
+  document.addEventListener("pointerdown", () => { if (cfg.alerts && cfg.alerts !== "off") unlockAudio(); }, { once: true });
+
   /* ---------------- drive summaries + history ---------------- */
   const fmtWhen = t => new Date(t).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const signed = (v, d = 1) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`;
@@ -774,6 +806,9 @@
   $("cfgBrick").value = cfg.brick; $("cfgBase").value = cfg.oneBased ? "1" : "0"; $("cfgAwake").checked = cfg.keepAwake;
   $("cfgBrick").addEventListener("change", e => { const n = Math.round(+e.target.value); const lo = cfg.oneBased ? 1 : 0; if (n >= lo && n <= lo + 107) { cfg.brick = n; store(KEY.cfg, cfg); } });
   $("cfgBase").addEventListener("change", e => { cfg.oneBased = e.target.value === "1"; store(KEY.cfg, cfg); });
+  $("cfgAlerts").value = cfg.alerts || "off";
+  $("cfgAlerts").addEventListener("change", e => { cfg.alerts = e.target.value; store(KEY.cfg, cfg); unlockAudio(); });
+  $("alertTest").addEventListener("click", () => { unlockAudio(); fireAlert("ease", true); setTimeout(() => fireAlert("brake", true), 900); });
   $("cfgAwake").addEventListener("change", e => { cfg.keepAwake = e.target.checked; store(KEY.cfg, cfg); if (cfg.keepAwake && app.source) keepAwake(); else releaseAwake(); });
   window.addEventListener("resize", () => { lastChart = 0; });
 
