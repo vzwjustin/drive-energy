@@ -120,7 +120,7 @@
      Distance: odometer on 0x3B6. Falls back to integrating power and speed if either is missing. */
   function tick() {
     const now = performance.now(), dt = Math.min(1, (now - app.lastTick) / 1000); app.lastTick = now;
-    if (L.powerKW != null) app.pEma = app.pEma == null ? L.powerKW : app.pEma + (L.powerKW - app.pEma) * Math.min(1, dt / 0.6);
+    if (L.powerKW != null) app.pEma = app.pEma == null ? L.powerKW : app.pEma + (L.powerKW - app.pEma) * Math.min(1, dt / 0.3);
     if (L.powerKW != null) app.synthNet += (L.powerKW * dt) / 3600;
     if (L.speedMph != null) app.synthOdo += (L.speedMph * dt) / 3600;
     const hasTotals = L.totalOutKWh != null, net = hasTotals ? L.totalOutKWh - L.totalInKWh : app.synthNet;
@@ -147,7 +147,7 @@
     if (live && (app.source === "car" || app.source === "demo")) app.coach.update({
       pedal: L.pedalPct, kw: app.pEma, mph: L.speedMph, brake: L.brakeOn, gear: L.gear, soc: L.socUI ?? L.uiSOC,
       tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
-    }, app.source === "demo" ? dt * DEMO_SPEED : dt, now);
+    }, app.source === "demo" ? dt * DEMO_SPEED : dt, app.source === "demo" ? (app.simNow = (app.simNow || 0) + dt * DEMO_SPEED * 1000) : now);
     if (app.rec && app.source && now - app.rec.last >= 1000) record(now);
     if (app.source === "car") status(live ? "live" : "quiet", live ? "Live" : "No CAN traffic");
     if (app.source === "tessie" && app.tessieAt) status(live ? "tessie" : "quiet", `Tessie · ${app.carState === "asleep" ? "car asleep · " : ""}${age(Date.now() - app.tessieAt)}`);
@@ -170,12 +170,6 @@
     // power
     set("pw", fx(p, Math.abs(p ?? 0) < 10 ? 1 : 0), "kW");
     $("pwSub").textContent = p == null ? "waiting for pack data" : p < -0.2 ? (mph > 1 ? "regenerating" : "charging") : mph > 1 ? "driving" : "parked draw";
-    const maxR = L.maxRegenKW > 5 ? L.maxRegenKW : 60, maxD = L.maxDischargeKW > 20 ? L.maxDischargeKW : 200;
-    const frac = p == null ? 0 : p >= 0 ? Math.min(1, p / maxD) : Math.max(-1, p / maxR);
-    const bar = $("pbar");
-    bar.style.left = frac >= 0 ? "50%" : `${50 + frac * 50}%`; bar.style.width = `${Math.abs(frac) * 50}%`;
-    bar.dataset.dir = frac < 0 ? "regen" : "use";
-    $("pmin").textContent = `−${Math.round(maxR)}`; $("pmax").textContent = `${Math.round(maxD)}`;
     // consumption
     const inst = p != null && mph > 3 ? (p * 1000) / mph : null;
     set("inst", fx(inst), "Wh/mi");
@@ -390,6 +384,48 @@
     if (s === 0) { notice(e.message, "bad"); disconnect(); return; }
     notice(`Couldn't reach Tessie (${e && e.message ? e.message : "network"}). Retrying every 10 seconds.`, "warn");
   }
+
+  /* ---------------- vertical power meter ----------------
+     Animated every display frame from the raw pack power (not the 250 ms tick), lightly smoothed.
+     Up = power drawn (scale tops out at the car's discharge limit), down = regen (scale bottoms out at the
+     regen limit the BMS reports, drawn as a dashed line when it's lower than the scale). √-scaled so 5–20 kW
+     cruising still moves the bar visibly. */
+  const meter = { v: 0, peak: 0, peakAt: 0, last: performance.now(), scaleUp: 0, scaleDn: 0 };
+  function meterScales() {
+    const up = L.maxDischargeKW > 40 && L.maxDischargeKW < 400 ? L.maxDischargeKW : 200;
+    return { up: Math.max(150, Math.ceil(up / 50) * 50), dn: 80 };
+  }
+  function drawTicks(sc) {
+    if (meter.scaleUp === sc.up && meter.scaleDn === sc.dn) return;
+    meter.scaleUp = sc.up; meter.scaleDn = sc.dn;
+    const zero = 64, ticks = [[sc.up, 1], [100, 1], [50, 1], [20, 1], [0, 0], [-20, -1], [-50, -1], [-sc.dn, -1]];
+    $("mTicks").innerHTML = ticks.filter(([v], i, a) => a.findIndex(x => x[0] === v) === i && Math.abs(v) <= (v >= 0 ? sc.up : sc.dn))
+      .map(([v]) => `<span style="top:${meterPos(v, sc, zero)}%">${v > 0 ? v : v < 0 ? "−" + -v : "0"}</span>`).join("");
+  }
+  function meterFrac(v, sc) { return v >= 0 ? Math.sqrt(Math.min(1, v / sc.up)) : Math.sqrt(Math.min(1, -v / sc.dn)); }
+  function meterPos(v, sc, zero) { return v >= 0 ? zero * (1 - meterFrac(v, sc)) : zero + (100 - zero) * meterFrac(v, sc); }
+  function meterFrame(now) {
+    const dt = Math.min(0.1, (now - meter.last) / 1000); meter.last = now;
+    const live = app.source && performance.now() - app.lastFrameAt < (app.source === "tessie" ? 45000 : 4000);
+    const target = live && L.powerKW != null ? L.powerKW : 0;
+    meter.v += (target - meter.v) * Math.min(1, dt / 0.12);
+    const sc = meterScales(); drawTicks(sc);
+    const f = meterFrac(meter.v, sc);
+    $("mUp").style.transform = `scaleY(${meter.v > 0 ? f : 0})`;
+    $("mDown").style.transform = `scaleY(${meter.v < 0 ? f : 0})`;
+    // Peak hold: the strongest pull or regen of the last 2 s.
+    if (Math.abs(meter.v) > Math.abs(meter.peak) || now - meter.peakAt > 2000) { meter.peak = meter.v; meter.peakAt = now; }
+    const pk = $("mPeak"); pk.hidden = !live || Math.abs(meter.peak) < 3; if (!pk.hidden) pk.style.top = `${meterPos(meter.peak, sc, 64)}%`;
+    // Regen limit marker when the BMS is limiting regen below the scale (cold pack, near full).
+    const lim = $("mLimit"), rl = L.maxRegenKW;
+    lim.hidden = !live || !(rl >= 0 && rl < sc.dn - 2);
+    if (!lim.hidden) lim.style.top = `${meterFrac(-rl, sc) * 100}%`;
+    const now_ = $("mNow");
+    now_.textContent = live && L.powerKW != null ? `${meter.v < -0.5 ? "−" : ""}${Math.abs(meter.v) < 10 ? Math.abs(meter.v).toFixed(1) : Math.round(Math.abs(meter.v))}` : "—";
+    now_.dataset.dir = meter.v < -0.5 ? "regen" : meter.v > 0.5 ? "use" : "";
+    requestAnimationFrame(meterFrame);
+  }
+  requestAnimationFrame(meterFrame);
 
   /* ---------------- CSV recording ---------------- */
   const COLS = ["time", "speed_mph", "power_kw", "pack_v", "pack_a", "odometer_mi", "total_out_kwh", "total_in_kwh", "soc_pct", "energy_remaining_kwh", "full_pack_kwh", "brick_min_v", "brick_max_v", "watched_brick", "watched_brick_v", "pack_tmin_c", "pack_tmax_c"];
