@@ -220,7 +220,7 @@
         t.D.push(dist); t.E.push(t.drive);
         if (t.D.length > 1400) { t.D.splice(0, 200); t.E.splice(0, 200); }
       }
-      if ((app.source === "car" || app.source === "tessie") && now - app.lastSave > 10000) { store(tripKey(app.source), t); app.lastSave = now; }
+      if (now - app.lastSave > 10000) { saveTrip(); app.lastSave = now; }
     }
     app.tgt = app.source ? computeTargets() : null;
     if (live && (app.source === "car" || app.source === "demo")) app.coach.update({
@@ -265,6 +265,8 @@
     syncAwake();
     render(live);
   }
+
+  function saveTrip() { if (app.trip && (app.source === "car" || app.source === "tessie")) store(tripKey(app.source), app.trip); }
 
   function windowAvg(t, w) {
     if (!t || t.D.length < 2) return null;
@@ -315,17 +317,21 @@
     $("tSince").textContent = t ? `since ${new Date(t.t0).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
     const bars = $("split").children;
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
-    // Slower-changing panels redraw once a second (or immediately on an explicit refresh) to keep the phone cool.
+    // Slower-changing panels redraw once a second (or immediately on an explicit refresh) to keep the phone cool,
+    // and only on the tab that's showing: switching tabs forces a redraw.
     const nowR = performance.now(), slow = live === true && nowR - (app.slowAt || 0) < 1000 && !app.forceSlow;
-    if (!slow) { app.slowAt = nowR; app.forceSlow = false; renderBreakdown(t); renderPlan(usable); renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh()); }
-    // bricks
-    if (!slow) renderBricks();
+    if (!slow) {
+      app.slowAt = nowR; app.forceSlow = false;
+      if (cfg.tab === "trip") renderBreakdown(t);
+      if (cfg.tab === "battery") { renderPlan(usable); renderBricks(); }
+      if (cfg.tab === "cockpit") renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh());
+    }
     renderCoach(live, slow);
     // footer
     $("fps").textContent = app.source ? `${app.fps} frames/s` : "";
     $("recBtn").textContent = app.rec ? `Stop recording (${app.rec.rows.length - 1} rows)` : "Record CSV";
     $("dlBtn").hidden = !(app.rec && app.rec.rows.length > 1) && !app.lastCsv;
-    if (performance.now() - lastChart > 900) { lastChart = performance.now(); drawChart(t); }
+    if (cfg.tab === "trip" && performance.now() - lastChart > 900) { lastChart = performance.now(); drawChart(t); }
   }
 
   function renderCoach(live, slow) {
@@ -361,7 +367,7 @@
     // Right after a slowdown, show its result in the second coaching line for 8 s.
     if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 / (app.source === "demo" ? DEMO_SPEED : 1) && app.source)
       $("tip2").textContent = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
-    if (slow) return;
+    if (slow || cfg.tab !== "trip") return;                // the speed curve lives on the Trip tab
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
     $("tempBand").textContent = band === "x" ? "" : `at ${band} °F outside`;
     if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile${band === "x" ? "" : " at this outside temperature"}.</p>`; return; }
@@ -402,12 +408,14 @@
   $("planMi").value = String(cfg.plan.mi); $("planRes").value = String(cfg.plan.res);
   $("planMi").addEventListener("change", e => { const v = Math.round(parseFloat(e.target.value)); if (v >= 1 && v <= 400) { cfg.plan.mi = v; store(KEY.cfg, cfg); } else e.target.value = String(cfg.plan.mi); app.forceSlow = true; render(true); });
   $("planRes").addEventListener("change", e => { cfg.plan.res = +e.target.value; store(KEY.cfg, cfg); app.forceSlow = true; render(true); });
+  // Wh/mi across several drives, weighted by distance: a half-mile hop doesn't count as much as a highway run.
+  const whOf = list => { const mi = list.reduce((p, d) => p + d.mi, 0), kwh = list.reduce((p, d) => p + d.kwh, 0); return mi > 0 && kwh > 0 ? (kwh * 1000) / mi : null; };
   function renderPlan(usable) {
     const full = L.fullPackKWh, box = $("planRows");
-    const recent = drives.history.slice(0, 7).filter(d => d.wh > 0);
-    const t = app.trip, tripMi = t ? t.lastOdo - t.odo0 : 0;
-    const wh = recent.length >= 2 ? recent.reduce((p, d) => p + d.wh, 0) / recent.length : tripMi > 2 && t.drive > 0 ? (t.drive * 1000) / tripMi : ratedWh();
-    const basis = recent.length >= 2 ? `your last ${recent.length} drives` : tripMi > 2 ? "this trip" : "rated";
+    const recent = drives.history.slice(0, 7), recentWh = recent.length >= 2 ? whOf(recent) : null;
+    const t = app.trip, tripMi = t ? t.lastOdo - t.odo0 : 0, tripWh = tripMi > 2 && t.drive > 0 ? (t.drive * 1000) / tripMi : null;
+    const wh = recentWh ?? tripWh ?? ratedWh();
+    const basis = recentWh ? `your last ${recent.length} drives` : tripWh ? "this trip" : "rated";
     if (!full || !wh) { box.innerHTML = `<p class="note">Needs the full-pack reading from the car: connect the adapter or Tessie.</p>`; return; }
     const needKWh = (cfg.plan.mi * wh) / 1000, needPct = Math.min(100, Math.ceil((needKWh / full) * 100 + cfg.plan.res));
     const soc = L.socUI ?? L.uiSOC;
@@ -619,8 +627,12 @@
       } else { $("gClimL").textContent = "Climate"; set2("gClim", app.source === "tessie" ? "needs the adapter" : "—", ""); }
     }
     // 3. Range goal: energy budget per mile to arrive with the buffer intact.
+    // A goal covers one stretch of driving: it clears itself a day after it was set. Set before the car was connected,
+    // it counts from the first odometer reading.
+    if (cfg.goal && Date.now() - cfg.goal.at > 864e5) { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); lastChart = 0; }
     const g = cfg.goal;
     if (!g) { $("gGoalL").textContent = "Range goal"; set2("gGoal", "Set a goal", ""); return; }
+    if (g.odo0 == null && L.odoMi != null) { g.odo0 = L.odoMi; store(KEY.cfg, cfg); }
     const done = L.odoMi != null && g.odo0 != null ? Math.max(0, L.odoMi - g.odo0) : 0;
     const left = Math.max(0, g.mi - done);
     $("gGoalL").textContent = `Goal ${g.mi} mi · ${left.toFixed(1)} left`;
@@ -761,8 +773,7 @@
   function renderScore(tripMi, tripAvg) {
     const rated = ratedWh(), el = $("effScore");
     if (!(tripMi > 0.5) || !(tripAvg > 0) || !rated) { el.innerHTML = "—"; el.dataset.tone = ""; $("effScoreSub").textContent = "drive half a mile to score"; return; }
-    const r = tripAvg / rated, s1 = Math.max(0, Math.min(1, (1.5 - r) / 0.65)) * 100;
-    const pedal = app.coach.score(), sc = Math.round(0.7 * s1 + 0.3 * (pedal ?? s1));
+    const r = tripAvg / rated, pedal = app.coach.score(), sc = Drives.score(tripAvg, rated, pedal);   // same formula as drive summaries
     el.innerHTML = `${sc}<small>/100</small>`; el.dataset.tone = sc >= 80 ? "good" : sc >= 60 ? "warn" : "bad";
     $("effScoreSub").textContent = `${r <= 1 ? Math.round((1 - r) * 100) + "% under" : Math.round((r - 1) * 100) + "% over"} rated Wh/mi${pedal != null ? ` · pedal ${pedal}% in range` : ""}`;
   }
@@ -778,6 +789,9 @@
   }
   function flowFrame(now) {
     const dt = Math.min(0.1, (now - flow.last) / 1000); flow.last = now;
+    // Every frame only while it can move: on the Cockpit with a source (or still settling to zero); otherwise twice a second.
+    if (cfg.tab === "cockpit" && (app.source || Math.abs(flow.v) > 0.01)) requestAnimationFrame(flowFrame);
+    else { setTimeout(() => requestAnimationFrame(flowFrame), 500); if (cfg.tab !== "cockpit") return; }
     const live = app.source && performance.now() - app.lastFrameAt < (app.source === "tessie" ? 45000 : 4000);
     flow.v += ((live && L.powerKW != null ? L.powerKW : 0) - flow.v) * Math.min(1, dt / 0.12);
     const up = Math.max(150, Math.ceil((L.maxDischargeKW > 40 && L.maxDischargeKW < 400 ? L.maxDischargeKW : 200) / 50) * 50), dn = 80;
@@ -797,7 +811,6 @@
       : v < -0.5 ? (hard ? `${kw} regen · strong, lift earlier` : `${kw} regen`)
       : !moving ? `${kw} ${v > 0.3 ? "draw" : ""}`.trim()
       : useTone === "ok" ? `${kw} · efficient` : useTone === "way" ? `${kw} · hard acceleration` : `${kw} · above efficient`;
-    requestAnimationFrame(flowFrame);
   }
   document.documentElement.style.setProperty("--z", `${FZ}%`);
   requestAnimationFrame(flowFrame);
@@ -894,7 +907,7 @@
     const avg = (a, f) => { const v = a.map(f).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((p, c) => p + c, 0) / v.length : null; };
     const recent = h.slice(0, 7), prev = h.slice(7, 14);
     const sNow = avg(recent, d => d.score), sPrev = avg(prev, d => d.score);
-    const whNow = avg(recent, d => d.wh), whPrev = avg(prev, d => d.wh);
+    const whNow = whOf(recent), whPrev = whOf(prev);
     const best = h.reduce((b, d) => (d.score != null && (!b || d.score > b.score) ? d : b), null);
     const saved = h.slice(0, 30).reduce((p, d) => p + (d.rangeDeltaMi || 0), 0);
     const bars = h.slice(0, 12).reverse();
@@ -993,7 +1006,8 @@
     const rows = r.pending; r.pending = [];
     csvStore("readwrite", s => { for (const [k, v] of rows) s.put(v, k); const old = rows[rows.length - 1][0] - MAX_ROWS; if (old > 0) s.delete(IDBKeyRange.upperBound(old)); });
   }
-  document.addEventListener("visibilitychange", () => { if (document.hidden) flushRec(); });
+  // Leaving the page (app switch, tab closed, Android reclaiming it): save now, not at the next 10 s / 15 s mark.
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { flushRec(); saveTrip(); store(KEY.speed, realCoach.state.buckets); } });
   if (load(KEY.csv, null)) csvStore("readonly", s => s.getAll()).then(rows => {
     if (!rows || !rows.length || app.rec) return;
     app.lastCsv = [COLS.join(","), ...rows].join("\n");
@@ -1015,7 +1029,7 @@
      it when space runs low), and let it be saved to a file and restored. The Tessie token is never exported. */
   navigator.storage?.persist?.().catch(() => {});
   $("exportBtn").addEventListener("click", () => {
-    if (app.trip && (app.source === "car" || app.source === "tessie")) store(tripKey(app.source), app.trip);
+    saveTrip();
     const data = { app: "drive-energy", version: 1, exported: new Date().toISOString(),
       drives: load(KEY.drives, []), speed: load(KEY.speed, {}), trip: load(KEY.trip, null), tessieTrip: load(KEY.tripT, null) };
     saveFile(`drive-energy-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), "application/json");

@@ -49,10 +49,10 @@ Four tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
   - The arc is green up to your **target**, amber to 1.35× the target, and red beyond.
   - The target is your own best steady-cruise Wh/mi at this speed and outside temperature, or the rated figure until enough data exists. The white tick marks it.
   - The amber dot is your trip average. The badge underneath reads **Efficient**, **A bit heavy** or **Wasting range**.
-- **Efficiency score (0–100, this trip):**
+- **Trip score (0–100, first tile):** the same score drive summaries use.
   - 70% is consumption vs rated: 100 at 15% or more under rated Wh/mi, 0 at 50% or more over.
   - 30% is the share of pedal time spent in the 15–40% range.
-- **Tiles:** range at this pace, average over the last 5/15/30 mi, and power.
+- **Tiles:** trip score, range at this pace, average over the last 5/15/30 mi, and power.
 - **Power flow bar:** regen to the left of zero, power used to the right, with green "efficient" zones on both sides. The label states it in words, for example "12 kW · efficient" or "35 kW regen · strong, lift earlier".
 
 ## Range tools (v16–v20)
@@ -63,9 +63,9 @@ Four tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
   - It's reported on the Accelerator card, in the second coaching line right after each slowdown, and in drive summaries.
 - **Climate / parked draw chip:** compressor kW, or standby draw while stopped, converted to **miles of range per hour** at your pace.
 - **Speed curve:** your learned Wh/mi by speed, with the sweet spot and your current speed marked, plus how far your current charge goes at each speed.
-- **Charge plan:** what % to charge to for the miles you need plus an arrival reserve, at your last-7-drives Wh/mi.
+- **Charge plan:** what % to charge to for the miles you need plus an arrival reserve, at your last 7 drives' Wh/mi weighted by distance (so a short hop doesn't skew it), then this trip, then rated.
 - **Drive summaries and history:** a score, comparison with rated, slowdown capture, energy breakdown and the one habit to fix, with trends across drives.
-- Slower-changing panels redraw once a second to keep the phone cool in a mount.
+- Slower-changing panels redraw once a second, and only on the tab you're looking at, to keep the phone cool in a mount.
 
 ## Eyes-free alerts (Setup tab, off by default)
 
@@ -90,8 +90,8 @@ Everything below is driven by **your car's own steady-cruise data** (the coach's
 - **Right now (Wh/mi)** turns green within 10% of the target for this speed, amber up to 40% over, and red beyond.
 - **Range vs rated:** projected range at your pace minus the car's rated range. Positive means you're beating the car's estimate.
 - **Best speed:** your most efficient 5-mph band, plus how many miles slowing to it would add right now.
-- **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart.
-- **Drive view** (header button): shows only the Cockpit, without the pedal stat tiles, all enlarged for a quick glance, and keeps the screen on.
+- **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart. Miles count from the first odometer reading after you set it, and the goal clears itself after a day.
+- **Drive view** (header button): shows only the Cockpit with a compact header and larger numbers, and keeps the screen on. On a phone mounted sideways the gauge sits on the left and the tip, tiles, power bar and accelerator stack on the right, so nothing important is below the fold.
 
 ## Range coach (needs the adapter)
 
@@ -205,7 +205,7 @@ Drives, the learned speed table and trips are stored in Chrome on this phone onl
 - `decode.js`: CAN signal decoders (usable in Node)
 - `coach.js`: pedal/brake efficiency coach and speed-band learning
 - `sim.js`: demo frame generator (the **Demo** button)
-- `sw.js`, `manifest.webmanifest`, `icon.svg`: offline install
+- `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-maskable.svg`: offline install. The service worker fetches fresh files first but serves the saved copy if the network hangs for 3 s.
 - `tests/`: run with `npm test` (`app.test.js` boots `app.js` on a stub page against a fake adapter and a fake Tessie). GitHub Actions runs them on every push.
 - `tools/bump.js`: `npm run bump` raises the version in `sw.js` and `index.html` for a release
 

@@ -8,7 +8,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- crossorigin: a CORS reply the service worker can keep, so the fonts also load offline -->
+<link rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap">
 <style>
 /* OLED cockpit: four tabs (Cockpit / Trip / Battery / Setup), tabs on top on wide screens and docked at the bottom on phones.
    Emerald = regen and good, cyan = pedal and the watched brick, amber = energy and caution, rose = waste. Dark-first for night driving. */
@@ -129,13 +131,9 @@ h1{font:700 16px/1.2 var(--f-ui);letter-spacing:-.01em;margin:0}
 @media (max-width:560px){.coach{flex-wrap:wrap}.cmain{flex-basis:calc(100% - 56px)}.toggle{margin-left:56px}}
 
 /* hero: the gauge is the king metric */
-.hhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.scorepill{text-align:right;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:8px 14px}
-.scorepill .v{font:700 26px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
-.scoresub{max-width:240px;text-align:right;margin-top:6px}
 .hbody{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:20px;align-items:center;margin-top:4px}
 @media (max-width:640px){.hbody{grid-template-columns:minmax(0,1fr)}}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .kpi{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 13px;min-width:0}
 .kpi .v{font-size:26px}
 .gaugewrap{position:relative;max-width:320px;margin:0 auto;width:100%}
@@ -296,21 +294,38 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
 .shabit{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--inset);border-left:4px solid var(--warn)}
 .shabit[data-tone="good"]{border-left-color:var(--regen)} .shabit p{margin:4px 0 0;font-size:15px;font-weight:500}
 
-/* Drive view: the cockpit only, bigger type, header down to status + Drive view */
-body.drive .tabbar, body.drive footer, body.drive .notice[data-tone="info"], body.drive .mini{display:none!important}
+/* Drive view: the cockpit's live readings only, sized for a glance on a mounted phone; header down to status + Drive view */
+body.drive .tabbar, body.drive footer, body.drive .notice[data-tone="info"], body.drive .mini, body.drive .miles, body.drive .kpi .sub,
+body.drive .mark, body.drive h1{display:none!important}
 body.drive .actions .btn:not(#driveBtn){display:none}
 body.drive.offline .actions #connectBtn{display:inline-flex}
-body.drive .wrap{padding-bottom:max(16px,env(safe-area-inset-bottom))}
-body.drive .tip{font-size:22px} body.drive .tip2{font-size:16px}
-body.drive .gnum{font-size:70px} body.drive .gnum[data-word="true"]{font-size:40px} body.drive .kpi .v{font-size:30px} body.drive .ftrack{height:28px} body.drive .gval{font-size:17px}
+body.drive .top{padding-block:max(8px,env(safe-area-inset-top)) 8px}
+body.drive .wrap{padding-top:10px;gap:10px;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+body.drive .view,body.drive .g12,body.drive .stack{gap:10px}
+body.drive .card,body.drive .coach{padding:14px}
+body.drive .tip{font-size:20px} body.drive .tip2{font-size:15px}
+body.drive .gnum{font-size:64px} body.drive .gnum[data-word="true"]{font-size:38px}
+body.drive .kpi{padding:9px 12px} body.drive .kpi .v{font-size:26px}
+body.drive .flow{margin-top:12px;padding-top:10px}
+body.drive .ftrack{height:26px} body.drive .gval{font-size:16px}
 body.drive .overlay .sheet{font-size:16px}
+/* Landscape mount: gauge on the left; tip, numbers, power bar, accelerator and guide stacked on the right */
 @media (orientation:landscape) and (max-height:540px){
-  body.drive .top{position:static;padding-block:6px}
-  body.drive .wrap{padding-top:8px;gap:10px}
-  body.drive .g12{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px}
-  body.drive .hbody{grid-template-columns:minmax(200px,40%) minmax(0,1fr);gap:12px}
-  body.drive .gnum{font-size:54px} body.drive .kpi .v{font-size:22px} body.drive .kpi .sub,body.drive .pscale,body.drive .goalform{display:none!important}
-  body.drive .tip{font-size:19px} body.drive .card,body.drive .coach{padding:12px}
+  body.drive .top{position:static;padding-block:4px}
+  body.drive .actions .btn{padding:5px 11px}
+  body.drive .wrap{padding-top:8px;gap:8px}
+  body.drive #view-cockpit{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr);gap:8px 14px;align-items:start;
+    grid-template-areas:"gauge coach" "gauge kpis" "gauge flow" "gauge pedal" "gauge guide"}
+  body.drive #view-cockpit .g12, body.drive .stack, body.drive .hero, body.drive .hbody{display:contents}
+  body.drive .coach{grid-area:coach;padding:8px 12px} body.drive .cicon{display:none}
+  body.drive .gaugewrap{grid-area:gauge;max-width:none;align-self:center}
+  body.drive .kpis{grid-area:kpis;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  body.drive .kpi{padding:6px 10px} body.drive .kpi .v{font-size:20px} body.drive .kpi .label{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  body.drive .flow{grid-area:flow;margin:0;padding:0;border:0}
+  body.drive .pedal{grid-area:pedal;padding:8px 12px}
+  body.drive .guide{grid-area:guide;gap:8px} body.drive .gchip{padding:6px 10px}
+  body.drive .gnum{font-size:52px} body.drive .tip{font-size:17px} body.drive .gval{font-size:13px}
+  body.drive .pscale, body.drive .fticks, body.drive .goalform{display:none!important}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -380,13 +395,6 @@ body.drive .overlay .sheet{font-size:16px}
 
     <div class="g12">
       <section class="card hero c7" aria-label="Efficiency">
-        <div class="hhead">
-          <span class="eyebrow">Consumption now</span>
-          <div>
-            <div class="scorepill"><div class="label">Trip score</div><div class="v" id="effScore">—</div></div>
-            <div class="sub scoresub" id="effScoreSub">this trip</div>
-          </div>
-        </div>
         <div class="hbody">
           <div class="gaugewrap">
             <svg id="effGauge" class="effgauge" viewBox="0 0 240 200" role="img" aria-label="Efficiency gauge: watt-hours per mile now against your target"></svg>
@@ -400,6 +408,7 @@ body.drive .overlay .sheet{font-size:16px}
             </div>
           </div>
           <div class="kpis">
+            <div class="kpi"><div class="label">Trip score</div><div class="v" id="effScore">—</div><div class="sub" id="effScoreSub">this trip</div></div>
             <div class="kpi"><div class="label">Range at this pace</div><div class="v" id="proj">—</div><div class="sub" id="projSub">—</div></div>
             <div class="kpi"><div class="label" id="avgLabel">Avg · last 15 mi</div><div class="v" id="avg">—</div><div class="sub" id="avgSub">builds as you drive</div></div>
             <div class="kpi"><div class="label">Power</div><div class="v" id="pw">—</div><div class="sub" id="pwSub">waiting for pack data</div></div>
@@ -417,7 +426,7 @@ body.drive .overlay .sheet{font-size:16px}
       </section>
 
       <div class="stack c5">
-        <section class="card" aria-label="Accelerator">
+        <section class="card pedal" aria-label="Accelerator">
           <div class="prow"><span class="eyebrow">Accelerator</span><span class="pzone" id="pedalZone"></span><span class="pnum" id="pedalPct">—</span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
           <div class="ptrack" aria-hidden="true"><div class="pgreen"></div><div class="pfill" id="pedalFill"></div></div>
           <div class="pscale" aria-hidden="true"><span style="left:15%">15</span><span style="left:40%">40%</span></div>
@@ -428,7 +437,7 @@ body.drive .overlay .sheet{font-size:16px}
             <div class="tile"><div class="label">Braking, little regen</div><div class="v" id="cBrake">0</div></div>
           </div>
         </section>
-        <section class="card" aria-label="Wh/mi of each recent mile">
+        <section class="card miles" aria-label="Wh/mi of each recent mile">
           <div class="chead"><span class="eyebrow">Mile by mile</span><span class="sub" id="mileNow"></span></div>
           <div class="mbars" id="mileBars"></div>
           <div class="mfoot"><span>Dashed line = target</span><span>Road grade<span class="v" id="cGrade">—</span></span></div>
@@ -604,14 +613,14 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v27</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v28</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=27"></script>
-<script src="elm.js?v=27"></script>
-<script src="sim.js?v=27"></script>
-<script src="coach.js?v=27"></script>
-<script src="drives.js?v=27"></script>
-<script src="stops.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="decode.js?v=28"></script>
+<script src="elm.js?v=28"></script>
+<script src="sim.js?v=28"></script>
+<script src="coach.js?v=28"></script>
+<script src="drives.js?v=28"></script>
+<script src="stops.js?v=28"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

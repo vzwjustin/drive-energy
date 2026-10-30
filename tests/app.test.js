@@ -244,7 +244,7 @@ const test = async (name, fn) => {
   });
 
   await test("brick heatmap: all 108 bricks with voltages, the watched one outlined", async () => {
-    const app = boot({ storage: { "de.cfg.v1": { brick: 38, oneBased: true } } });
+    const app = boot({ storage: { "de.cfg.v1": { brick: 38, oneBased: true, tab: "battery" } } });
     assert.strictEqual((app.html("bricks").match(/class="bk none/g) || []).length, 108, "empty grid before data");
     app.click("demoBtn"); await wait(2500);
     const html = app.html("bricks");
@@ -252,6 +252,27 @@ const test = async (name, fn) => {
     assert.ok(!/bk none/.test(html), "every brick reported");
     assert.ok(/class="bk w"[^>]*title="Brick 38: 3\.\d{3} V">38</.test(html), "brick 38 outlined");
     assert.ok(/^Lowest · #\d+$/.test(app.text("bMinLbl")), app.text("bMinLbl"));
+    app.stop();
+  });
+
+  await test("range goal: set before connecting it counts from the first odometer reading; a day later it clears", async () => {
+    const tes = fakeTessie();
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { goal: { mi: 20, odo0: null, at: Date.now() } } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300);
+    assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).goal.odo0, 10000);
+    assert.strictEqual(app.text("gGoalL"), "Goal 20 mi · 20.0 left");
+    app.stop();
+    const old = boot({ storage: { "de.cfg.v1": { goal: { mi: 20, odo0: 9990, at: Date.now() - 2 * 864e5 } } } });
+    await wait(400);
+    assert.strictEqual(JSON.parse(old.store.get("de.cfg.v1")).goal, null); assert.strictEqual(old.text("gGoalV"), "Set a goal");
+    old.stop();
+  });
+
+  await test("charge plan weighs recent drives by distance", async () => {
+    const tes = fakeTessie(), drives = [{ id: "1", t0: 1, mi: 0.5, kwh: 0.225, wh: 450, score: 50 }, { id: "2", t0: 2, mi: 60, kwh: 14.4, wh: 240, score: 90 }];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { tab: "battery" } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(1300);                // the plan redraws once a second
+    assert.ok(/at 242 Wh\/mi/.test(app.html("planRows")) && /your last 2 drives/.test(app.html("planRows")), app.html("planRows"));
     app.stop();
   });
 
