@@ -451,6 +451,23 @@ const test = async (name, fn) => {
     app.stop();
   });
 
+  await test("coach: a tip holds 8 s, a new one must lead 2 s first, a warning cuts in at once", async () => {
+    const c = require("../coach.js").createCoach({});
+    let now = 0;
+    const run = (sec, x) => { for (let i = 0; i < sec * 4; i++) c.update({ mph: 40, kw: 10, gear: "D", grade: 0, ...(typeof x === "function" ? x(i) : x) }, 0.25, (now += 250)); return c.state.headline.kind; };
+    assert.strictEqual(run(1, { pedal: 0 }), "pedal.coast");
+    assert.strictEqual(run(12, i => ({ pedal: i % 2 ? 0 : 60 })), "pedal.coast", "a pedal flicking on and off doesn't flip the tip");
+    assert.strictEqual(c.state.second, null, "nor the second line");
+    assert.strictEqual(run(1.75, { pedal: 60 }), "pedal.coast", "not before the new tip has led 2 s");
+    assert.strictEqual(run(0.5, { pedal: 60 }), "pedal.heavy");
+    assert.strictEqual(run(7, { pedal: 0 }), "pedal.heavy", "held 8 s");
+    assert.strictEqual(run(1.25, { pedal: 0 }), "pedal.coast");
+    assert.strictEqual(run(6, i => ({ pedal: 0, mph: i % 2 ? 2 : 8 })), "pedal.coast", "creeping in traffic doesn't flip to Stopped.");
+    assert.strictEqual(run(0.25, { pedal: 0, mph: 0, gear: "P" }), "parked", "shifting into P switches at once");
+    run(0.25, { pedal: 0 });
+    assert.strictEqual(run(0.25, { pedal: 60, soc: 10, kw: 70 }), "soc.lowDraw", "a warning switches at once");
+  });
+
   await test("units: coach tips and drive habits use the picked units", async () => {
     const Units = require("../units.js"), Coach = require("../coach.js"), Drives = require("../drives.js");
     try {

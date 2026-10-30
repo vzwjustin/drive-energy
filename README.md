@@ -126,7 +126,7 @@ Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjusti
 
 - **Pedal bar:** green zone **15–40%**, with 1% hysteresis so the color doesn't flicker. Light (<15%) is amber, too much (>40%) is red, and while lifting off it shows the regen being recovered.
 - **Uphill exemption:** a heavy pedal that's only holding speed uphill (car's `DI_gradeEst` above 2%, not accelerating) counts as in range.
-- **Cue order:** warnings first, then good, then tips. The top cue is the headline (held at least 3 s), the next one shows underneath, and a "look ahead and coast" reminder is always last.
+- **Cue order:** warnings first, then good, then tips. The top cue is the headline, the next one shows underneath, and a "look ahead and coast" reminder is always last. Each line keeps its tip at least 8 s (its numbers still update) and only moves to a tip that has led for 2 s, so a pedal flicking between zones doesn't flip the text. A warning, or shifting into or out of P, switches at once. Demo holds tips in real seconds too.
 - **Cues:**
   - Pack cold, pack hot, low charge with high draw
   - Near full (>95%) so regen is limited, or regen limited below 15 kW

@@ -237,7 +237,7 @@
     if (live && (app.source === "car" || app.source === "demo")) app.coach.update({
       pedal: L.pedalPct, kw: app.pEma, mph: L.speedMph, brake: L.brakeOn, gear: L.gear, soc: L.socUI ?? L.uiSOC,
       tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
-    }, app.source === "demo" ? dt * DEMO_SPEED : dt, app.source === "demo" ? (app.simNow = (app.simNow || 0) + dt * DEMO_SPEED * 1000) : now);
+    }, app.source === "demo" ? dt * DEMO_SPEED : dt, now);   // real time even in Demo, so tips are held long enough to read
     const dtSim = app.source === "demo" ? dt * DEMO_SPEED : dt;
     // Health test prep pace, for its time estimates: average speed over the last few minutes, stops included.
     if (!healthOn()) app.pace = null;
@@ -371,9 +371,8 @@
       tip.textContent = st.headline.text;
       // Screen readers hear a tip once when it changes, not on every live-number refresh (4× a second).
       if (app.saidKind !== st.headline.kind) { app.saidKind = st.headline.kind; $("tipSay").textContent = st.headline.text; }
-      tip.dataset.tone = st.headline.kind === "parked" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
-      const next = st.headline.kind !== "parked" && st.list.find(q => q.kind !== st.headline.kind && !q.standing);
-      tip2.textContent = next ? next.text : "";
+      tip.dataset.tone = st.headline.kind === "parked" || st.headline.kind === "stopped" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
+      tip2.textContent = st.second ? st.second.text : "";      // held like the headline (coach.js), so it doesn't flicker
     }
     const sc = C.score();
     set("cScore", sc == null ? "—" : String(sc), sc == null ? "" : "%");
@@ -387,7 +386,7 @@
     $("cCap").dataset.tone = avgCap == null ? "" : Stops.grade(avgCap);
     $("cCapSub").textContent = ls ? `last: ${Math.round(U.speed(ls.v0))}→${Math.round(U.speed(ls.v1))} ${U.s}, ${ls.pct}%${ls.braked ? " (brake used)" : ""}` : `slowdowns from ${Math.round(U.speed(15))}+ ${U.s}`;
     // Right after a slowdown, show its result in the second coaching line for 8 s.
-    if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 / (app.source === "demo" ? DEMO_SPEED : 1) && app.source)
+    if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 && app.source)   // 8 real seconds, Demo too
       $("tip2").textContent = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
     // Health test prep takes over the banner: where to turn around, then how far is left to the target.
     if (cfg.health && app.source && live) {

@@ -86,11 +86,22 @@
     return out;
   }
 
+  // One line of coaching on screen. It keeps its tip at least HOLD ms (refreshing the live numbers in it) so it can be
+  // read in a glance or two, then moves to the tip that has led for SETTLE ms, not one that flickered up for a moment.
+  const HOLD = 8000, SETTLE = 2000;
+  function show(s, top, list, now, force) {
+    const kind = top ? top.kind : null;
+    if (kind === (s.cur ? s.cur.kind : null)) { s.cur = top; s.next = kind; return; }   // same tip (or still none), fresh numbers
+    if (kind !== s.next) { s.next = kind; s.nextAt = now; }                               // a new leader starts settling
+    if (force || (now - s.nextAt >= SETTLE && (!s.cur || now - s.at >= HOLD))) { s.cur = top; s.at = now; return; }
+    if (s.cur) s.cur = list.find(q => q.kind === s.cur.kind) || s.cur;                   // still held: its numbers stay current
+  }
+
   function createCoach({ loadBuckets, saveBuckets } = {}) {
     const c = {
       zone: null, lastMph: null, accel: 0,
       driveSec: 0, pressedSec: 0, rightSec: 0, heavyEvents: 0, frictionEvents: 0, wasHeavy: false, wasFriction: false,
-      headline: null, headAt: 0, list: [], cruiseOn: false,
+      headline: null, second: null, line1: { cur: null, at: 0 }, line2: { cur: null, at: 0 }, list: [], cruiseOn: false,
       buckets: migrate((loadBuckets && loadBuckets()) || {}), lastSave: 0,
     };
     function migrate(b) { const o = {}; for (const k in b) o[String(k).includes("|") ? k : `${k}|x`] = b[k]; return o; }
@@ -145,13 +156,17 @@
         }
       } else { c.wasHeavy = false; c.wasFriction = false; }
 
-      // Headline: hold a kind ≥3 s unless a warning arrives (EcoLab holds per kind so live numbers can update).
-      const parkedText = x.gear === "P" ? (x.kw != null && x.kw < -0.3 ? "Charging." : "Parked. Coaching starts once you're rolling.") : "Stopped.";
-      const top = moving ? list[0] : { level: "TIP", kind: "parked", text: parkedText };
-      const h = c.headline;
-      if (!h || top.kind === h.kind) { if (!h) c.headAt = now; c.headline = top; }
-      else if (now - c.headAt > 3000 || (top.level === "WARN" && h.level !== "WARN") || (top.kind === "parked") !== (h.kind === "parked")) { c.headline = top; c.headAt = now; }
-      else { const cur = list.find(q => q.kind === h.kind); if (cur) c.headline = cur; }   // same kind, fresh numbers
+      // Headline, then a second line with the next tip. A warning, or shifting into or out of P, switches at once;
+      // "Stopped." waits its turn like any tip, so creeping in traffic doesn't flip it on and off.
+      const parked = x.gear === "P", top = moving ? list[0]
+        : parked ? { level: "TIP", kind: "parked", text: x.kw != null && x.kw < -0.3 ? "Charging." : "Parked. Coaching starts once you're rolling." }
+        : { level: "TIP", kind: "stopped", text: "Stopped." };
+      const h = c.line1.cur;
+      show(c.line1, top, list, now, !h || (top.level === "WARN" && h.level !== "WARN") || parked !== (h.kind === "parked"));
+      c.headline = c.line1.cur;
+      const next = (moving && list.find(q => q.kind !== c.headline.kind && !q.standing)) || null;
+      show(c.line2, next, list, now, parked || (c.line2.cur && c.line2.cur.kind === c.headline.kind));
+      c.second = c.line2.cur;
     }
 
     return {
