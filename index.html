@@ -52,33 +52,7 @@ h1{font-family:var(--f-num);font-weight:600;font-size:24px;margin:0;letter-spaci
 .notice p{margin:0}
 
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
-.hero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.stat .v{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-size:44px;font-weight:600;line-height:1.05}
-.stat .v small,.kv .v small{font-size:15px;font-weight:500;color:var(--muted);margin-left:3px}
-.stat .sub{font-size:12.5px;color:var(--muted)}
-.stat.power .v{color:var(--fg)} .stat.avg .v{color:var(--energy)}
-@media (max-width:700px){.hero{grid-template-columns:repeat(2,minmax(0,1fr))}.stat .v{font-size:36px}}
-/* Vertical power meter: rises with power drawn, drops below zero with regen. Square-root scale so cruising power is visible. */
-.herogrid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:stretch}
-.heromain{min-width:0}
-.meter{display:flex;flex-direction:column;align-items:center;gap:6px;width:78px}
-.mtitle{font:600 11.5px var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
-.mbody{flex:1;display:flex;gap:6px;min-height:260px;width:100%;justify-content:center}
-.mtrack{position:relative;width:30px;border-radius:9px;background:var(--raised);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
-.mhalf{position:absolute;left:0;right:0;overflow:hidden}
-.mup{top:0;height:var(--zero,64%)} .mdown{bottom:0;top:var(--zero,64%)}
-.mfill{position:absolute;left:3px;right:3px;transform:scaleY(0);will-change:transform}
-.mup .mfill{bottom:0;top:3px;transform-origin:bottom;border-radius:6px 6px 2px 2px;background:linear-gradient(to top,var(--energy),color-mix(in srgb,var(--energy) 70%,var(--bad)))}
-.mdown .mfill{top:0;bottom:3px;transform-origin:top;border-radius:2px 2px 6px 6px;background:linear-gradient(to bottom,var(--regen),color-mix(in srgb,var(--regen) 65%,var(--fg)))}
-.mzero{position:absolute;left:-2px;right:-2px;top:var(--zero,64%);height:2px;margin-top:-1px;background:var(--fg);opacity:.7}
-.mpeak{position:absolute;left:2px;right:2px;height:2px;background:var(--fg);opacity:.85;transition:top .25s}
-.mlimit{position:absolute;left:0;right:0;border-top:2px dashed var(--fg);opacity:.45}
-.mticks{position:relative;width:30px;font:500 11px var(--f-num);color:var(--muted)}
-.mticks span{position:absolute;left:0;transform:translateY(-50%);white-space:nowrap}
-.mnow{font-size:20px;font-weight:700;line-height:1}
-.mnow[data-dir="regen"]{color:var(--regen)} .mnow[data-dir="use"]{color:var(--energy)}
-@media (max-width:700px){.herogrid{gap:12px}.meter{width:64px}.mbody{min-height:300px}.mtrack{width:26px}}
-@media (prefers-reduced-motion:reduce){.mpeak{transition:none}}
+.kv .v small{font-size:15px;font-weight:500;color:var(--muted);margin-left:3px}
 
 .grid{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
 @media (min-width:900px){.grid{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}}
@@ -144,11 +118,6 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .stable2{display:flex;flex-direction:column;gap:2px;margin-top:6px;font-size:13px}
 .stable2 div{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:3px 6px;border-radius:6px;border:1px solid transparent}
 .stable2 .sweet{background:color-mix(in srgb,var(--energy) 16%,transparent)} .stable2 .cur{border-color:var(--fg)}
-.srow{display:grid;grid-template-columns:52px 1fr 40px;gap:8px;align-items:center;font-size:13.5px;padding:2px 4px;border-radius:6px;border:1px solid transparent}
-.srow .num:last-child{text-align:right;font-weight:600}
-.sbar{height:8px;background:var(--raised);border-radius:4px;overflow:hidden}
-.sbar i{display:block;height:100%;background:var(--rated)}
-.srow.sweet .sbar i{background:var(--energy)} .srow.cur{border-color:var(--fg)}
 /* Efficiency cluster: gauge (the king metric) + KPI tiles + horizontal power flow */
 .cluster{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:22px;align-items:start}
 @media (max-width:760px){.cluster{grid-template-columns:1fr}}
@@ -223,7 +192,6 @@ body.drive.offline header .btns #connectBtn{display:inline-flex}
 .tv{font:600 24px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
 .tv[data-tone="good"],#driveTrend [data-tone="good"]{color:var(--regen)} .tv[data-tone="bad"],#driveTrend [data-tone="bad"]{color:var(--bad)}
 .trendbars{width:100%;height:46px;display:block;margin-bottom:12px}
-.trendbars{preserveAspectRatio:none}
 .dlist{display:flex;flex-direction:column;gap:6px}
 .drow{display:grid;grid-template-columns:minmax(0,1fr) auto auto 38px;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--raised);border:1px solid var(--line);text-align:left;font-size:13.5px}
 .drow .num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
@@ -262,16 +230,8 @@ body.drive .overlay .sheet{font-size:16px}
 .goalform{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:12px}
 .goalform input{background:var(--surface)!important}
 .goalform input{flex:1 1 120px;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num)}
-.stat .v[data-tone="good"]{color:var(--regen)} .stat .v[data-tone="warn"]{color:var(--warn)} .stat .v[data-tone="bad"]{color:var(--bad)}
-/* Target band on the power meter: green = efficient draw for this speed, or gentle regen */
-.mband{position:absolute;left:0;right:0;background:color-mix(in srgb,var(--regen) 18%,transparent)}
-.mup .mband{bottom:0;border-top:2px solid var(--regen)} .mdown .mband{top:0;border-bottom:2px solid var(--regen)}
-.mup .mfill[data-tone="ok"]{background:linear-gradient(to top,var(--regen),color-mix(in srgb,var(--regen) 70%,var(--fg)))}
-.mup .mfill[data-tone="way"]{background:var(--bad)}
-.mdown .mfill[data-tone="hard"]{background:var(--warn)}
 /* Drive view: only what helps while driving */
 body.drive .grid, body.drive .tools, body.drive #diagPanel, body.drive footer, body.drive .notice[data-tone="info"]{display:none!important}
-body.drive .mbody{min-height:58vh} body.drive .mtrack{width:40px} body.drive .meter{width:92px} body.drive .mnow{font-size:26px}
 body.drive .tip{font-size:23px;min-height:64px} body.drive .tip2{font-size:16px}
 body.drive .gval{font-size:19px}
 #driveBtn[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#08130f}
@@ -473,7 +433,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
   <section class="panel" id="diagPanel">
     <details id="diag">
       <summary>Diagnostics · what the adapter is sending</summary>
-      <p class="note">If readings are missing, connect the car, wait 20 seconds, then tap Copy diagnostics and paste it to Claude.</p>
+      <p class="note">If readings are missing, connect the car, wait 20 seconds, then tap Copy diagnostics and include the text when you report the problem.</p>
       <div class="btns" style="margin:10px 0"><button class="btn primary" id="diagCopy" type="button">Copy diagnostics</button></div>
       <pre id="diagText" class="diagtext"></pre>
     </details>

@@ -6,7 +6,7 @@
   window.addEventListener("error", e => {
     const n = document.getElementById("notice"); if (!n) return;
     n.hidden = false; n.dataset.tone = "bad";
-    document.getElementById("noticeText").textContent = `Something broke: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno}). Reload; if it stays, send this to Claude.`;
+    document.getElementById("noticeText").textContent = `Something broke: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno}). Reload; if it stays, report this message with Copy diagnostics (bottom of the page).`;
   });
   const $ = id => document.getElementById(id);
   const D = window.CanDecode;
