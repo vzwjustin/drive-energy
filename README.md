@@ -176,7 +176,7 @@ Like the Park view of the car's own Energy app: what the car used while it sat. 
 
 ## On the car's touchscreen
 
-Open the same address in the car's browser. It has no Web Serial or Bluetooth, so the adapter can't connect there; the screen runs from Tessie instead (about every 10 s). The browser is recognized by its `Tesla/` user agent; add `?car` to the address to try that layout anywhere.
+Open the same address in the car's browser. The screen runs from Tessie there (about every 10 s): the car's browser most likely can't reach a Bluetooth adapter, though that isn't confirmed yet. To find out, open `check.html` (or **Setup → Diagnostics → Bluetooth check**) on the car's screen with the adapter plugged in: it shows the browser's Chromium version, whether serial and Bluetooth LE exist, and buttons that open the same adapter picker the phone uses. The serial test asks the adapter its name (`ATI`) and closes; nothing is sent to the car. The browser is recognized by its `Tesla/` user agent; add `?car` to the address to try that layout anywhere.
 
 - Tessie starts on its own when the page opens. The first time, it opens Setup for the token (the car's browser keeps its own storage, separate from the phone's). **Connect car** then means Tessie.
 - Hidden there, since they need the adapter: the accelerator card, where the energy went, the speed curve, the brick heatmap, and the adapter settings. Drives are scored from Tessie and kept in the car's browser.

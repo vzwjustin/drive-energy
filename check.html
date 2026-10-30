@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drive Energy · Bluetooth check</title>
+<style>
+/* One screen, big text: can this browser (the car's, mostly) reach the OBD adapter? Nothing here talks to the car:
+   the serial test asks the adapter itself who it is (ATI) and closes. */
+:root{--bg:#07090e;--surface:#111622;--line:#1e293b;--fg:#f8fafc;--muted:#94a3b8;--good:#34d399;--warn:#fbbf24;--bad:#fb7185;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:22px}
+h1{font-size:28px;margin:0 0 4px} p{margin:6px 0;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:14px}
+.card h2{font-size:21px;margin:0 0 6px}
+.big{font-size:24px;font-weight:700} .mono{font:14px ui-monospace,Menlo,Consolas,monospace;color:var(--muted);word-break:break-all}
+[data-tone="good"]{color:var(--good)} [data-tone="warn"]{color:var(--warn)} [data-tone="bad"]{color:var(--bad)}
+button{font:700 19px system-ui,sans-serif;background:var(--good);color:#04140c;border:0;border-radius:12px;padding:14px 22px;margin-top:10px;cursor:pointer}
+button:disabled{opacity:.4} a{color:#22d3ee}
+</style>
+</head>
+<body>
+<main>
+  <h1>Bluetooth check</h1>
+  <p>Open this on the car's screen with the adapter plugged in and the car on, then tap both buttons. Read out or photograph the results.</p>
+
+  <section class="card">
+    <h2>This browser</h2>
+    <div class="big" id="br">—</div>
+    <div class="mono" id="ua"></div>
+  </section>
+
+  <section class="card">
+    <h2>Adapter over Bluetooth serial (OBDLink MX+, vLinker…) or USB</h2>
+    <div class="big" id="sHas">—</div>
+    <button id="sTry" type="button">Try the adapter</button>
+    <div class="big" id="sRes" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card">
+    <h2>Bluetooth LE (OBDLink CX and other BLE adapters)</h2>
+    <div class="big" id="bHas">—</div>
+    <button id="bTry" type="button">Try Bluetooth LE</button>
+    <div class="big" id="bRes" style="margin-top:10px"></div>
+  </section>
+
+  <p style="margin-top:18px"><a href="./">Back to Drive Energy</a></p>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const say = (id, text, tone = "") => { $(id).textContent = text; $(id).dataset.tone = tone; };
+  const err = e => `${(e && e.name) || "Error"}: ${(e && e.message) || e}`;
+  const ua = navigator.userAgent, chrome = (ua.match(/Chrom(?:e|ium)\/(\d+)/) || [])[1], tesla = (ua.match(/Tesla\/(\S+)/) || [])[1];
+  say("br", [chrome ? `Chromium ${chrome}` : "Not Chromium", tesla ? `Tesla ${tesla}` : "not the car's browser", isSecureContext ? "" : "not a secure page"].filter(Boolean).join(" · "));
+  $("ua").textContent = ua;
+
+  // Serial: how the app reaches classic-Bluetooth adapters (and USB ones) on a phone or computer.
+  const hasSerial = "serial" in navigator;
+  say("sHas", hasSerial ? "Serial: available. Tap to see if the adapter is listed." : "Serial: not in this browser.", hasSerial ? "" : "bad");
+  $("sTry").disabled = !hasSerial;
+  $("sTry").addEventListener("click", async () => {
+    let port;
+    say("sRes", "Opening the picker…");
+    try { port = await navigator.serial.requestPort(); }
+    catch (e) { return say("sRes", e && e.name === "NotFoundError" ? `Nothing picked (${err(e)}). Did a list appear, and was the adapter in it?` : err(e), e && e.name === "NotFoundError" ? "warn" : "bad"); }
+    const info = port.getInfo ? port.getInfo() : {};
+    const kind = info.bluetoothServiceClassId ? "Bluetooth" : info.usbVendorId ? "USB" : "serial";
+    say("sRes", `Picked a ${kind} port. Connecting…`);
+    let r, w;
+    try {
+      await port.open({ baudRate: 115200 });
+      w = port.writable.getWriter(); r = port.readable.getReader();
+      await w.write(new TextEncoder().encode("ATI\r"));       // the adapter's own name and version; nothing goes to the car
+      let text = ""; const end = Date.now() + 5000, dec = new TextDecoder();
+      while (Date.now() < end && !text.includes(">")) {
+        const got = await Promise.race([r.read(), new Promise(res => setTimeout(() => res({ timeout: true }), end - Date.now()))]);
+        if (got.timeout || got.done) break;
+        text += dec.decode(got.value);
+      }
+      const reply = text.replace(/ATI|>/g, " ").replace(/\s+/g, " ").trim();
+      say("sRes", reply ? `Works here: the ${kind} adapter answered "${reply}".` : `Connected over ${kind}, but the adapter didn't answer in 5 s.`, reply ? "good" : "warn");
+    } catch (e) { say("sRes", `Picked a ${kind} port, but connecting failed: ${err(e)}`, "bad"); }
+    try { if (r) { await r.cancel(); r.releaseLock(); } if (w) w.releaseLock(); await port.close(); } catch (e) {}
+  });
+
+  // Bluetooth LE: a different kind of adapter; only the device picker is tried, nothing connects.
+  const hasBle = "bluetooth" in navigator;
+  say("bHas", hasBle ? "Bluetooth LE: available. Checking the radio…" : "Bluetooth LE: not in this browser.", hasBle ? "" : "bad");
+  $("bTry").disabled = !hasBle;
+  if (hasBle && navigator.bluetooth.getAvailability)
+    navigator.bluetooth.getAvailability().then(on => say("bHas", on ? "Bluetooth LE: available, radio on." : "Bluetooth LE: in the browser, but no radio it can use.", on ? "" : "warn"), e => say("bHas", `Bluetooth LE: ${err(e)}`, "bad"));
+  $("bTry").addEventListener("click", async () => {
+    say("bRes", "Opening the picker…");
+    try { const d = await navigator.bluetooth.requestDevice({ acceptAllDevices: true }); say("bRes", `Works here: picked "${d.name || d.id}".`, "good"); }
+    catch (e) { say("bRes", e && e.name === "NotFoundError" ? `Nothing picked (${err(e)}). Did a list appear?` : err(e), e && e.name === "NotFoundError" ? "warn" : "bad"); }
+  });
+})();
+</script>
+</body>
+</html>
