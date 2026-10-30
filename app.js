@@ -234,9 +234,11 @@
       if (now - app.lastSave > 10000) { saveTrip(); app.lastSave = now; }
     }
     app.tgt = app.source ? computeTargets() : null;
-    if (live && (app.source === "car" || app.source === "demo")) app.coach.update({
+    // Tessie has no pedal or brake data, so it gets the tips that don't need them (drag, pack, charge, cold air…).
+    if (live && app.source) app.coach.update({
       pedal: L.pedalPct, kw: app.pEma, mph: L.speedMph, brake: L.brakeOn, gear: L.gear, soc: L.socUI ?? L.uiSOC,
       tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
+      learn: app.source !== "tessie",
     }, app.source === "demo" ? dt * DEMO_SPEED : dt, now);   // real time even in Demo, so tips are held long enough to read
     const dtSim = app.source === "demo" ? dt * DEMO_SPEED : dt;
     // Health test prep pace, for its time estimates: average speed over the last few minutes, stops included.
@@ -266,7 +268,7 @@
         }
       }
     }
-    if (live && settled && (app.source === "car" || app.source === "demo") && app.trip) {
+    if (live && settled && app.source && app.trip) {         // Tessie too (gear from its shift state): no pedal or slowdown parts
       const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
       const done = drives.update({
         odo, mph: L.speedMph, gear: L.gear, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen,
@@ -365,14 +367,14 @@
     $("brakePill").dataset.on = String(L.brakeOn === true);
     const tip = $("tip"), tip2 = $("tip2");
     tip2.textContent = "";
-    if (app.source === "tessie") { tip.textContent = "Pedal coaching needs the adapter. Tessie doesn't send pedal or brake data."; tip.dataset.tone = "idle"; app.saidKind = null; }
-    else if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; app.saidKind = null; }
+    if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; app.saidKind = null; }
     else if (st.headline) {
       tip.textContent = st.headline.text;
       // Screen readers hear a tip once when it changes, not on every live-number refresh (4× a second).
       if (app.saidKind !== st.headline.kind) { app.saidKind = st.headline.kind; $("tipSay").textContent = st.headline.text; }
       tip.dataset.tone = st.headline.kind === "parked" || st.headline.kind === "stopped" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
-      tip2.textContent = st.second ? st.second.text : "";      // held like the headline (coach.js), so it doesn't flicker
+      tip2.textContent = st.second ? st.second.text                // held like the headline (coach.js), so it doesn't flicker
+        : app.source === "tessie" && !inCar && st.headline.kind !== "parked" ? "Pedal and brake coaching need the adapter." : "";
     }
     const sc = C.score();
     set("cScore", sc == null ? "—" : String(sc), sc == null ? "" : "%");
@@ -616,6 +618,8 @@
       L.packV = bat.pack_voltage; L.packA = bat.pack_current;
       L.powerKW = typeof ds.power === "number" ? ds.power : (bat.pack_voltage * bat.pack_current) / 1000;
       L.speedMph = ds.speed || 0;
+      L.gear = ds.shift_state || (ds.speed ? null : "P");    // no shift state while it sits (or sleeps): parked
+      L.outsideC = typeof (st.climate_state || {}).outside_temp === "number" ? st.climate_state.outside_temp : null;
       if (typeof vs.odometer === "number") L.odoMi = vs.odometer;
       L.energyRemainingKWh = bat.energy_remaining; L.fullPackKWh = bat.nominal_full_pack_energy; L.bufferKWh = null;
       L.socUI = bat.battery_level; L.ratedRangeMi = bat.battery_range;
@@ -637,8 +641,10 @@
     $("cfgVin").replaceChildren(...list.map(v => new Option(`${v.last_state?.display_name || "Car"} · …${String(v.vin).slice(-6)}`, v.vin)));
     $("cfgVin").value = app.vin;
   }
+  // Another car or account: forget the one looked up, so climate commands and the Parked card don't go to the old car.
+  const forgetCar = () => { app.vin = app.cmdVin = null; app.park = null; };
   $("cfgVin").addEventListener("change", async e => {
-    cfg.tessieVin = e.target.value; store(KEY.cfg, cfg);
+    cfg.tessieVin = e.target.value; store(KEY.cfg, cfg); forgetCar();
     if (app.source === "tessie") { await disconnect(); startTessie(); }
   });
   function tessieError(e) {
@@ -735,7 +741,7 @@
         $("gClimL").textContent = `Climate${out != null ? ` · ${out}${U.t} out` : ""}`;
         const mph = (cw * 1000) / pace;
         set2("gClim", cw < 0.15 ? `off · 0 ${U.d}/hr` : `${cw.toFixed(1)} kW · −${U.dist(mph).toFixed(1)} ${U.d}/hr`, cw > 3 ? "bad" : cw > 1.5 ? "warn" : "good");
-      } else { $("gClimL").textContent = "Climate"; set2("gClim", app.source === "tessie" ? "needs the adapter" : "—", ""); }
+      } else { $("gClimL").textContent = `Climate${out != null ? ` · ${out}${U.t} out` : ""}`; set2("gClim", app.source === "tessie" && !inCar ? "needs the adapter" : "—", ""); }
     }
     // 3. Range goal: energy budget per mile to arrive with the buffer intact.
     // A goal covers one stretch of driving: it clears itself a day after it was set. Set before the car was connected,
@@ -808,8 +814,8 @@
     if (h.odo0 == null && L.odoMi != null) { h.odo0 = L.odoMi; store(KEY.cfg, cfg); }
     if (h.e0 == null && L.energyRemainingKWh != null) { h.e0 = L.energyRemainingKWh; store(KEY.cfg, cfg); }
     const s = burnPlan(h); if (!s) return null;
-    if (h.phase !== "done" && s.raw <= h.target) { h.phase = "done"; store(KEY.cfg, cfg); fireAlert("turn"); burnOff(); }
-    else if (h.phase === "out" && s.out > 0.5 && s.turnIn <= 0) { h.phase = "back"; store(KEY.cfg, cfg); fireAlert("turn"); }
+    if (h.phase !== "done" && s.raw <= h.target) { h.phase = "done"; store(KEY.cfg, cfg); prepAlert(); burnOff(); }
+    else if (h.phase === "out" && s.out > 0.5 && s.turnIn <= 0) { h.phase = "back"; store(KEY.cfg, cfg); prepAlert(); }
     return s;
   }
   // Driving time for a distance at the prep's pace, e.g. "~14 min"; nothing until the car has moved.
@@ -931,6 +937,7 @@
     store(KEY.cfg, cfg); app.forceSlow = true; render(true);
   });
   $("hStart").addEventListener("click", () => {
+    unlockAudio();                                          // a tap: the prep's alerts may make sound
     if (cfg.health) healthStop();
     else { cfg.health = { target: cfg.healthTarget || 20, at: Date.now(), odo0: L.odoMi ?? null, e0: L.energyRemainingKWh ?? null, phase: "out", demo: app.source === "demo" }; store(KEY.cfg, cfg); burnMsg(""); }
     app.forceSlow = true; render(true);
@@ -1129,7 +1136,9 @@
     }
     prevKinds = kinds;
   }
-  document.addEventListener("pointerdown", () => { if (cfg.alerts && cfg.alerts !== "off") unlockAudio(); }, { once: true });
+  // Health test prep: turn around and target reached always alert (both ways when alerts are off), so the moment isn't missed.
+  const alertsOff = () => !cfg.alerts || cfg.alerts === "off", prepAlert = () => fireAlert("turn", alertsOff());
+  document.addEventListener("pointerdown", () => { if (!alertsOff() || cfg.health) unlockAudio(); }, { once: true });
 
   /* ---------------- drive summaries + history ---------------- */
   const fmtWhen = t => new Date(t).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -1392,8 +1401,8 @@
   confirmTap($("resetTrip"), "Tap again to reset the trip", () => { app.trip = null; drives.cancel(); stops.reset(); app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
   $("tessieBtn").addEventListener("click", () => (app.source === "tessie" ? disconnect() : startTessie()));
   $("cfgTok").value = tessieToken() ? "••••••••" : "";
-  $("cfgTok").addEventListener("change", e => { const v = e.target.value.trim(); if (!v || /^•+$/.test(v)) return; try { localStorage.setItem(KEY.tok, v); } catch (err) {} e.target.value = "••••••••"; notice("Tessie token saved on this device only.", "info"); });
-  $("cfgTokClear").addEventListener("click", () => { try { localStorage.removeItem(KEY.tok); } catch (e) {} $("cfgTok").value = ""; if (app.source === "tessie") disconnect(); });
+  $("cfgTok").addEventListener("change", e => { const v = e.target.value.trim(); if (!v || /^•+$/.test(v)) return; try { localStorage.setItem(KEY.tok, v); } catch (err) {} forgetCar(); e.target.value = "••••••••"; notice("Tessie token saved on this device only.", "info"); });
+  $("cfgTokClear").addEventListener("click", () => { try { localStorage.removeItem(KEY.tok); } catch (e) {} forgetCar(); $("cfgTok").value = ""; if (app.source === "tessie") disconnect(); });
   $("recBtn").addEventListener("click", toggleRec);
   confirmTap($("resetSpeed"), "Tap again to erase your speed table", () => { app.coach.resetBuckets(); app.forceSlow = true; render(false); });
   $("cruiseBtn").addEventListener("click", () => { app.coach.setCruise(!app.coach.state.cruiseOn); render(true); });

@@ -102,7 +102,7 @@ Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**,
 | One low tone / short buzz | Ease off: heavy pedal or a sharp lift-off |
 | Two high tones / double buzz | Lift earlier: braking with little regen, or regen at its limit |
 | Long low tone / long buzz | Pack warning: cold pack under high draw, hot pack, or low charge under high draw |
-| Three rising tones / three buzzes | Health test prep: turn around now, or the target is reached |
+| Three rising tones / three buzzes | Health test prep: turn around now, or the target is reached. These two always alert while a prep runs, with sound and vibration when alerts are off |
 
 Tap **Test alert** once to allow sound (browsers require a tap before audio).
 
@@ -120,9 +120,9 @@ Everything below is driven by **your car's own steady-cruise data** (the coach's
 - **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart. Miles count from the first odometer reading after you set it, and the goal clears itself after a day.
 - **Drive view** (header button): shows only the Cockpit with a compact header and larger numbers, and keeps the screen on. On a phone mounted sideways the gauge sits on the left and the tip, tiles, power bar and accelerator stack on the right, so nothing important is below the fold.
 
-## Range coach (needs the adapter)
+## Range coach
 
-Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjustin/eco, `core/sim/RangeCoach.kt`), so both apps coach the same way. Listen-only.
+Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjustin/eco, `core/sim/RangeCoach.kt`), so both apps coach the same way. Listen-only. Pedal, brake and slowdown coaching need the adapter; with Tessie the coach gives the tips that don't (speed and drag, pack temperature, charge level, cold air, your own speed data), and Tessie's 10-second readings never teach the speed table.
 
 - **Pedal bar:** green zone **15–40%**, with 1% hysteresis so the color doesn't flicker. Light (<15%) is amber, too much (>40%) is red, and while lifting off it shows the regen being recovered.
 - **Uphill exemption:** a heavy pedal that's only holding speed uphill (car's `DI_gradeEst` above 2%, not accelerating) counts as in range.
@@ -148,6 +148,8 @@ Tap **Start Tessie** (Setup tab) to run the same screen from Tessie's cloud inst
 - Paste your Tessie API token under **Setup → Tessie API token**. It's stored in that phone's browser only, so never put it in the repo; GitHub Pages repos are public.
 - Tessie mode never wakes the car (`use_cache=true`). When the car sleeps, the chip shows how old the last reading is.
 - Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter.
+- Tessie also gives the gear and outside temperature, so drives are scored and summarized in Tessie mode too (without the pedal, slowdown and climate parts), Parked vs Stopped reads right, and the speed table follows the outside temperature.
+- Picking another car or pasting a new token forgets the car looked up before, so climate commands and the Parked card go to the car picked.
 - Tessie mode keeps its own trip, separate from the adapter's.
 - More than one car on the Tessie account: pick it under **Setup → Tessie car** (remembered).
 
@@ -164,7 +166,7 @@ Like the Park view of the car's own Energy app: what the car used while it sat. 
 Open the same address in the car's browser. It has no Web Serial or Bluetooth, so the adapter can't connect there; the screen runs from Tessie instead (about every 10 s). The browser is recognized by its `Tesla/` user agent; add `?car` to the address to try that layout anywhere.
 
 - Tessie starts on its own when the page opens. The first time, it opens Setup for the token (the car's browser keeps its own storage, separate from the phone's). **Connect car** then means Tessie.
-- Hidden there, since they need the adapter: the accelerator card, where the energy went, drives, the speed curve, the brick heatmap, and the adapter settings.
+- Hidden there, since they need the adapter: the accelerator card, where the energy went, the speed curve, the brick heatmap, and the adapter settings. Drives are scored from Tessie and kept in the car's browser.
 - Buttons and tabs get bigger touch targets.
 - Not yet checked on a real car: whether this firmware's browser runs the page (it needs a recent Chromium) and whether it stays usable while driving.
 

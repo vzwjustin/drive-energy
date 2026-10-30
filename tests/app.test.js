@@ -7,7 +7,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 // Minimal page: every element accepts writes; click(id) runs the element's click handler, fire(type) a document event.
 // scale speeds up the app's own timers (scale 20: Tessie's 10 s poll runs every 0.5 s).
 // storage may be a plain object or the Map from an earlier boot (a reload).
-function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock = null, idb = null, ua = "" } = {}) {
+function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock = null, idb = null, ua = "", vibrate = null } = {}) {
   const els = {}, timers = [], docOn = {}, files = [];
   let reloads = 0;
   const el = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {} }, children: [{ style: {} }, { style: {} }],
@@ -24,7 +24,7 @@ function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock =
     Option: class { constructor(text, value) { this.text = text; this.value = value; } },
     setTimeout: later(setTimeout), setInterval: later(setInterval), clearTimeout, clearInterval,
     requestAnimationFrame: () => 0, getComputedStyle: () => ({ getPropertyValue: () => "" }), addEventListener() {},
-    location: { protocol: "http:", reload: () => reloads++ }, navigator: { userAgent: ua, ...(serial && { serial }), ...(wakeLock && { wakeLock }) },
+    location: { protocol: "http:", reload: () => reloads++ }, navigator: { userAgent: ua, ...(serial && { serial }), ...(wakeLock && { wakeLock }), ...(vibrate && { vibrate }) },
     document, ...(idb && { indexedDB: idb.indexedDB, IDBKeyRange: idb.IDBKeyRange }),
     localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) },
   };
@@ -76,7 +76,7 @@ function fakeSerial(...ports) {
 // car: readings a test can change between polls; car.idles is the parked-stretch log. Commands (POSTs) are recorded in cmds; one named in refuse gets
 // { result: false, reason } back, the rest succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false, speed: 0, idles: [] };
+  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false, speed: 0, gear: null, idles: [] };
   const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
@@ -87,7 +87,7 @@ function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
     const body = /vehicles/.test(url) ? { results: cars }
       : /idles/.test(url) ? { results: car.idles }
       : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, nominal_full_pack_energy: 75, battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
-      : { state: "online", drive_state: { power: 0, speed: car.speed }, vehicle_state: { odometer: car.odometer }, charge_state: {},
+      : { state: "online", drive_state: { power: 0, speed: car.speed, shift_state: car.gear }, vehicle_state: { odometer: car.odometer }, charge_state: {},
           climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
     return { ok: true, status: 200, json: async () => body };
   };
@@ -539,6 +539,45 @@ const test = async (name, fn) => {
     const bare = boot({ ua }); await wait(50);
     assert.ok(/Tessie API token/.test(bare.text("noticeText")), "no token: " + bare.text("noticeText"));
     bare.stop();
+  });
+
+  await test("Tessie: picking another car forgets the old one, so climate commands go to the car picked", async () => {
+    const tes = fakeTessie({ cars: [{ vin: "VIN1" }, { vin: "VIN2" }] });
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300); app.click("tessieBtn"); await wait(50);      // ran on VIN1, now stopped
+    app.click("hStart");
+    await app.el("cfgVin").on.change({ target: { value: "VIN2" } });
+    app.click("burnFull"); await wait(300);
+    assert.ok(tes.cmds.length && tes.cmds.every(c => c.startsWith("VIN2/")), tes.cmds.join(", "));
+    app.stop();
+  });
+
+  await test("Tessie: outside temperature and gear come through, tips that don't need the pedal show, drives are scored", async () => {
+    const tes = fakeTessie(); Object.assign(tes.car, { speed: 80, gear: "D", outside: 2 });
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn");
+    for (let i = 0; i < 6; i++) { await wait(500); tes.car.odometer += 1; tes.car.energy -= 0.25; }   // 250 Wh/mi
+    assert.ok(/^Cold air \(36 °F\)/.test(app.text("tip")), "tip: " + app.text("tip"));
+    assert.ok(/aero drag/.test(app.text("tip2")), "tip2: " + app.text("tip2"));
+    Object.assign(tes.car, { speed: 0 }); await wait(600);
+    assert.strictEqual(app.text("inst"), "Stopped", "in D, not moving");
+    tes.car.gear = "P"; await wait(600);
+    assert.strictEqual(app.text("inst"), "Parked");
+    app.click("endDrive"); await wait(50);
+    const d = (JSON.parse(app.store.get("de.drives.v1") || "[]"))[0];
+    assert.ok(d && d.mi >= 4 && Math.round(d.wh) === 250 && d.score != null, JSON.stringify(d));
+    assert.strictEqual(app.store.get("de.speed.v1"), undefined, "Tessie's readings don't teach the speed table");
+    app.stop();
+  });
+
+  await test("health test prep alerts at the target even with eyes-free alerts off", async () => {
+    const tes = fakeTessie(), buzz = [];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20, vibrate: p => buzz.push(p) });
+    app.click("tessieBtn"); await wait(300); app.click("hStart");
+    Object.assign(tes.car, { odometer: 10100, energy: 25, level: 20 }); await wait(1300);
+    assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).health.phase, "done");
+    assert.strictEqual(JSON.stringify(buzz), "[[150,80,150,80,300]]", "the turn pattern, once");
+    app.stop();
   });
 
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);

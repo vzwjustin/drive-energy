@@ -140,8 +140,9 @@
         if (heavy && !c.wasHeavy) c.heavyEvents++; c.wasHeavy = heavy;
         const fr = list.some(q => q.kind === "brake.friction");
         if (fr && !c.wasFriction) c.frictionEvents++; c.wasFriction = fr;
-        // Learn Wh/mi per 5-mph band and outside-temperature band from steady cruising only.
-        if (x.kw != null && mph >= 20 && Math.abs(c.accel) < 0.18 && x.brake !== true) {
+        // Learn Wh/mi per 5-mph band and outside-temperature band from steady cruising only (and not from x.learn false:
+        // Tessie's 10-second readings are too coarse to tell steady cruising apart).
+        if (x.learn !== false && x.kw != null && mph >= 20 && Math.abs(c.accel) < 0.18 && x.brake !== true) {
           const k = `${Math.floor(mph / 5) * 5}|${tempBand(x.outsideC)}`, b = (c.buckets[k] ||= { kwh: 0, mi: 0 });
           b.kwh += (x.kw * dt) / 3600; b.mi += (mph * dt) / 3600;
           if (saveBuckets && now - c.lastSave > 15000) { saveBuckets(c.buckets); c.lastSave = now; }
