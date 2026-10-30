@@ -77,8 +77,9 @@
       let known = [];
       try { known = await navigator.serial.getPorts(); } catch (e) {}
       if (choose || !known.length) {
+        notice("Chrome will ask to connect to a \"serial port\": that's your Bluetooth OBD adapter. Pick its name (for example OBDLink MX+ or vLinker) and tap Connect.", "info");
         try { picked = await navigator.serial.requestPort(); }
-        catch (e) { notice(e && e.name === "NotFoundError" ? "No adapter picked. If it isn't in the list, pair it in Android Settings → Bluetooth first (PIN is usually 1234), then try again." : (e.message || String(e)), "bad"); return; }
+        catch (e) { notice(e && e.name === "NotFoundError" ? "No adapter picked. If the list was empty: 1) pair the adapter in Android Settings → Bluetooth (PIN usually 1234), 2) allow Chrome's Nearby devices permission (Android Settings → Apps → Chrome → Permissions), 3) close Scan My Tesla or other OBD apps, then tap Choose adapter again." : (e.message || String(e)), "bad"); return; }
       }
       // A background attempt may still be holding the port; wait for it (up to 12 s) instead of ignoring the tap.
       if (app.connecting) { app.abortAuto = true; status("connecting", "Finishing the last attempt…"); for (let i = 0; i < 48 && app.connecting; i++) await new Promise(r => setTimeout(r, 250)); }
