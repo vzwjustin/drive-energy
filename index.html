@@ -241,14 +241,14 @@ body.drive header .btns .btn:not(#driveBtn){display:none}
 .shabit[data-tone="good"]{border-left-color:var(--regen)} .shabit p{margin:4px 0 0;font-size:15.5px;font-weight:500}
 body.drive .overlay .sheet{font-size:16px}
 /* Max-range guide strip */
-.guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.guide{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
 .gchip{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:12px;background:var(--raised);border:1px solid var(--line);text-align:left;min-width:0}
 .gbtn{cursor:pointer;font:inherit;color:inherit}
 .glabel{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .gval{font:600 15.5px/1.25 var(--f-num);font-variant-numeric:tabular-nums}
 .gchip[data-tone="good"]{border-color:var(--regen)} .gchip[data-tone="good"] .gval{color:var(--regen)}
 .gchip[data-tone="warn"]{border-color:var(--warn)} .gchip[data-tone="bad"]{border-color:var(--bad)} .gchip[data-tone="bad"] .gval{color:var(--bad)}
-@media (max-width:560px){.guide{grid-template-columns:1fr 1fr}.guide .gbtn{grid-column:1/-1}}
+@media (max-width:560px){.guide{grid-template-columns:1fr 1fr}}
 .goalform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 .goalform label{font-size:13px;color:var(--muted);width:100%}
 .quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%}
@@ -332,6 +332,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="guide" aria-label="Max-range guide">
       <div class="gchip" id="gRange"><span class="glabel">Range vs rated</span><span class="gval" id="gRangeV">—</span></div>
       <div class="gchip" id="gSpeed"><span class="glabel">Best speed</span><span class="gval" id="gSpeedV">—</span></div>
+      <div class="gchip" id="gClim"><span class="glabel" id="gClimL">Climate</span><span class="gval" id="gClimV">—</span></div>
       <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel" id="gGoalL">Range goal</span><span class="gval" id="gGoalV">Set a goal</span></button>
     </div>
     <form class="goalform" id="goalForm" novalidate hidden>
@@ -474,14 +475,14 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v17</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v18</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=17"></script>
-<script src="elm.js?v=17"></script>
-<script src="sim.js?v=17"></script>
-<script src="coach.js?v=17"></script>
-<script src="drives.js?v=17"></script>
-<script src="stops.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="decode.js?v=18"></script>
+<script src="elm.js?v=18"></script>
+<script src="sim.js?v=18"></script>
+<script src="coach.js?v=18"></script>
+<script src="drives.js?v=18"></script>
+<script src="stops.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

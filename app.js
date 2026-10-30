@@ -511,6 +511,20 @@
         set2("gSpeed", gain >= 1 ? `${s.mph}–${s.mph + 4} mph: +${gain} mi` : `${s.mph}–${s.mph + 4} mph`, gain >= 5 ? "warn" : "good");
       } else set2("gSpeed", `${s.mph}–${s.mph + 4} mph · ${Math.round(s.wh)} Wh/mi`, here && here.mph === s.mph ? "good" : "");
     } else set2("gSpeed", "learning…", "");
+    // Climate / standby cost in range terms: kW ÷ your Wh/mi = miles of range used per hour.
+    {
+      const pace = basis > 50 ? basis : tg && tg.whTarget ? tg.whTarget : ratedWh();
+      const moving = tg && tg.mph > 3, cw = L.compressorKW, outF = L.outsideC != null ? Math.round((L.outsideC * 9) / 5 + 32) : null;
+      if (!moving && app.pEma != null && app.pEma > 0.05 && app.source && pace) {
+        $("gClimL").textContent = "Parked draw";
+        const mph = (app.pEma * 1000) / pace;
+        set2("gClim", `${app.pEma.toFixed(1)} kW · −${mph.toFixed(1)} mi/hr`, app.pEma > 1.5 ? "warn" : "");
+      } else if (cw != null && pace) {
+        $("gClimL").textContent = `Climate${outF != null ? ` · ${outF}°F out` : ""}`;
+        const mph = (cw * 1000) / pace;
+        set2("gClim", cw < 0.15 ? "off · 0 mi/hr" : `${cw.toFixed(1)} kW · −${mph.toFixed(1)} mi/hr`, cw > 3 ? "bad" : cw > 1.5 ? "warn" : "good");
+      } else { $("gClimL").textContent = "Climate"; set2("gClim", app.source === "tessie" ? "needs the adapter" : "—", ""); }
+    }
     // 3. Range goal: energy budget per mile to arrive with the buffer intact.
     const g = cfg.goal;
     if (!g) { $("gGoalL").textContent = "Range goal"; set2("gGoal", "Set a goal", ""); return; }
