@@ -251,11 +251,12 @@
     $("tSince").textContent = t ? `since ${new Date(t.t0).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
     const bars = $("split").children;
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
-    renderBreakdown(t);
-    renderPlan(usable);
+    // Slower-changing panels redraw once a second (or immediately on an explicit refresh) to keep the phone cool.
+    const nowR = performance.now(), slow = live === true && nowR - (app.slowAt || 0) < 1000 && !app.forceSlow;
+    if (!slow) { app.slowAt = nowR; app.forceSlow = false; renderBreakdown(t); renderPlan(usable); }
     // bricks
-    renderBricks();
-    renderCoach(live);
+    if (!slow) renderBricks();
+    renderCoach(live, slow);
     // footer
     $("fps").textContent = app.source ? `${app.fps} frames/s` : "";
     $("recBtn").textContent = app.rec ? `Stop recording (${app.rec.rows.length - 1} rows)` : "Record CSV";
@@ -263,7 +264,7 @@
     if (performance.now() - lastChart > 900) { lastChart = performance.now(); drawChart(t); }
   }
 
-  function renderCoach(live) {
+  function renderCoach(live, slow) {
     const C = app.coach, st = C.state, mph = L.speedMph ?? 0, pedal = L.pedalPct, zone = st.zone;
     $("pedalFill").style.width = `${pedal ?? 0}%`;
     $("pedalFill").dataset.zone = pedal == null ? "" : zone || "";
@@ -293,6 +294,7 @@
     // Right after a slowdown, show its result in the second coaching line for 8 s.
     if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 / (app.source === "demo" ? DEMO_SPEED : 1) && app.source)
       $("tip2").textContent = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
+    if (slow) return;
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
     $("tempBand").textContent = band === "x" ? "" : `at ${band} °F outside`;
     if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile${band === "x" ? "" : " at this outside temperature"}.</p>`; return; }
@@ -331,8 +333,8 @@
   // plus the reserve you want to arrive with, as a % of the current full pack.
   cfg.plan = Object.assign({ mi: 30, res: 20 }, cfg.plan || {});
   $("planMi").value = String(cfg.plan.mi); $("planRes").value = String(cfg.plan.res);
-  $("planMi").addEventListener("change", e => { const v = Math.round(parseFloat(e.target.value)); if (v >= 1 && v <= 400) { cfg.plan.mi = v; store(KEY.cfg, cfg); } else e.target.value = String(cfg.plan.mi); render(true); });
-  $("planRes").addEventListener("change", e => { cfg.plan.res = +e.target.value; store(KEY.cfg, cfg); render(true); });
+  $("planMi").addEventListener("change", e => { const v = Math.round(parseFloat(e.target.value)); if (v >= 1 && v <= 400) { cfg.plan.mi = v; store(KEY.cfg, cfg); } else e.target.value = String(cfg.plan.mi); app.forceSlow = true; render(true); });
+  $("planRes").addEventListener("change", e => { cfg.plan.res = +e.target.value; store(KEY.cfg, cfg); app.forceSlow = true; render(true); });
   function renderPlan(usable) {
     const full = L.fullPackKWh, box = $("planRows");
     const recent = drives.history.slice(0, 7).filter(d => d.wh > 0);

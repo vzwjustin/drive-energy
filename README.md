@@ -46,6 +46,18 @@ On later visits, Chrome remembers the adapter, so **Connect car** skips the choo
 - **Tiles:** range at this pace, average over the last 5/15/30 mi, and power.
 - **Power flow bar:** regen to the left of zero, power used to the right, with green "efficient" zones on both sides. The label states it in words, for example "12 kW · efficient" or "35 kW regen · strong, lift earlier".
 
+## Range tools (v16–v20)
+
+- **Mile by mile:** each of the last 10 whole miles plus the current one, as bars colored against your target, with a dashed target line.
+- **Slowdown capture:** for every slowdown from 15+ mph that loses at least 10 mph with your foot mostly off the pedal, the share of the car's momentum (½·m·v², 1850 kg) that came back as regen.
+  - Drag and rolling resistance take some of it, so **60%+ is excellent**.
+  - It's reported on the Coach card, in the second coaching line right after each slowdown, and in drive summaries.
+- **Climate / parked draw chip:** compressor kW, or standby draw while stopped, converted to **miles of range per hour** at your pace.
+- **Speed curve:** your learned Wh/mi by speed, with the sweet spot and your current speed marked, plus how far your current charge goes at each speed.
+- **Charge plan:** what % to charge to for the miles you need plus an arrival reserve, at your last-7-drives Wh/mi.
+- **Drive summaries and history:** a score, comparison with rated, slowdown capture, energy breakdown and the one habit to fix, with trends across drives.
+- Slower-changing panels redraw once a second to keep the phone cool in a mount.
+
 ## Eyes-free alerts (Settings, off by default)
 
 Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**, at most once per 15 s per kind, never while **Cruise / Autopilot on** is set, and only above 5 mph.
