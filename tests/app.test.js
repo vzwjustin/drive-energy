@@ -231,6 +231,30 @@ const test = async (name, fn) => {
     app.stop();
   });
 
+  await test("tabs: the last one is remembered, Drive view shows the cockpit, Tessie without a token opens Setup", async () => {
+    const app = boot({ storage: { "de.cfg.v1": { tab: "battery" } } });
+    const shown = () => ["cockpit", "trip", "battery", "setup"].filter(n => !app.el(`view-${n}`).hidden);
+    assert.deepStrictEqual(shown(), ["battery"]);
+    app.click("tab-trip");
+    assert.deepStrictEqual(shown(), ["trip"]); assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).tab, "trip");
+    app.click("driveBtn"); assert.deepStrictEqual(shown(), ["cockpit"]);
+    app.click("driveBtn"); app.click("tessieBtn"); await wait(50);
+    assert.deepStrictEqual(shown(), ["setup"]); assert.ok(/token/.test(app.text("noticeText")));
+    app.stop();
+  });
+
+  await test("brick heatmap: all 108 bricks with voltages, the watched one outlined", async () => {
+    const app = boot({ storage: { "de.cfg.v1": { brick: 38, oneBased: true } } });
+    assert.strictEqual((app.html("bricks").match(/class="bk none/g) || []).length, 108, "empty grid before data");
+    app.click("demoBtn"); await wait(2500);
+    const html = app.html("bricks");
+    assert.strictEqual((html.match(/class="bk/g) || []).length, 108);
+    assert.ok(!/bk none/.test(html), "every brick reported");
+    assert.ok(/class="bk w"[^>]*title="Brick 38: 3\.\d{3} V">38</.test(html), "brick 38 outlined");
+    assert.ok(/^Lowest · #\d+$/.test(app.text("bMinLbl")), app.text("bMinLbl"));
+    app.stop();
+  });
+
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);
   process.exit(fail ? 1 : 0);                             // exit explicitly: the fake adapters' streams are still ticking
 })().catch(e => { console.error(e); process.exit(1); });

@@ -6,7 +6,7 @@
   window.addEventListener("error", e => {
     const n = document.getElementById("notice"); if (!n) return;
     n.hidden = false; n.dataset.tone = "bad";
-    document.getElementById("noticeText").textContent = `Something broke: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno}). Reload; if it stays, report this message with Copy diagnostics (bottom of the page).`;
+    document.getElementById("noticeText").textContent = `Something broke: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno}). Reload; if it stays, report this message with Copy diagnostics (Setup tab).`;
   });
   const $ = id => document.getElementById(id);
   const D = window.CanDecode;
@@ -38,8 +38,8 @@
     $("chooseBtn").hidden = app.source === "car";
     document.body.classList.toggle("offline", app.source !== "car");
     $("disconnectBtn").hidden = app.source !== "car";
-    $("demoBtn").textContent = app.source === "demo" ? "Stop demo" : "Demo";
-    $("tessieBtn").textContent = app.source === "tessie" ? "Stop Tessie" : "Tessie";
+    $("demoLbl").textContent = app.source === "demo" ? "Stop demo" : "Demo";
+    $("tessieLbl").textContent = app.source === "tessie" ? "Stop Tessie" : "Tessie";
   }
   function notice(text, tone) {
     const n = $("notice"); n.hidden = !text; n.dataset.tone = tone || "warn"; $("noticeText").textContent = text || "";
@@ -303,6 +303,8 @@
     set("eBuf", fx(L.bufferKWh, 1), "kWh"); set("pv", fx(L.packV, 1), "V"); set("pa", fx(L.packA, 1), "A");
     const tF = c => (c == null ? null : (c * 9) / 5 + 32);
     $("pt").innerHTML = L.packTminC != null ? `${fx(tF(L.packTminC))}–${fx(tF(L.packTmaxC))}<small>°F</small>` : "—";
+    $("topSoc").textContent = soc != null ? `${fx(soc)}%` : "—";
+    $("topTemp").textContent = L.packTminC != null ? `${fx(tF(L.packTminC))}–${fx(tF(L.packTmaxC))}°F` : "—";
     // trip
     set("tMi", fx(tripMi, 1), "mi"); set("tAvg", fx(tripAvg), "Wh/mi");
     const tot = t ? t.drive + t.park : 0;
@@ -431,9 +433,11 @@
     const b = L.bricks, have = b.filter(v => v != null);
     const idx = cfg.oneBased ? cfg.brick - 1 : cfg.brick;
     $("bWatchLbl").textContent = `Brick ${cfg.brick}`;
+    $("bMinLbl").textContent = "Lowest"; $("bMaxLbl").textContent = "Highest";
     if (have.length < 20) { ["bMin", "bMax", "bSpread", "bWatch", "bGap"].forEach(id => ($(id).innerHTML = "—")); $("bCount").textContent = app.source === "tessie" ? "needs the adapter (not in Tessie)" : `${have.length}/108 reported`; drawBricks(null, idx); return; }
-    const min = Math.min(...have), max = Math.max(...have);
+    const min = Math.min(...have), max = Math.max(...have), base = cfg.oneBased ? 1 : 0;
     set("bMin", fx(min, 3), "V"); set("bMax", fx(max, 3), "V"); set("bSpread", fx((max - min) * 1000), "mV");
+    $("bMinLbl").textContent = `Lowest · #${b.indexOf(min) + base}`; $("bMaxLbl").textContent = `Highest · #${b.indexOf(max) + base}`;
     const w = b[idx];
     set("bWatch", w != null ? fx(w, 3) : "—", w != null ? "V" : "");
     const others = b.filter((v, i) => v != null && i !== idx), lowOther = others.length ? Math.min(...others) : null;
@@ -441,24 +445,19 @@
     $("bGap").innerHTML = gap == null ? "—" : `${gap > 0 ? "+" : ""}${fx(gap)}<small>mV</small>`;
     $("bGap").dataset.tone = gap != null && gap < -20 ? "bad" : gap != null && gap < -5 ? "warn" : "";
     $("bCount").textContent = `${have.length}/108 reported · gap is vs the lowest of the others`;
-    drawBricks(b, idx, min, max);
+    drawBricks(b, idx);
   }
 
-  function drawBricks(b, idx, min, max) {
-    const c = $("bricks"), dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
-    if (!w) return;
-    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
-    const g = c.getContext("2d"), cs = getComputedStyle(document.documentElement);
-    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
-    const bw = w / 108;
-    for (let i = 0; i < 108; i++) {
-      const v = b && b[i];
-      let hh = 3;
-      if (v != null && max > min) hh = 4 + ((v - min) / (max - min)) * (h - 6);
-      else if (v != null) hh = h * 0.6;
-      g.fillStyle = i === idx ? cs.getPropertyValue("--energy") : v != null ? cs.getPropertyValue("--rated") : cs.getPropertyValue("--line");
-      g.fillRect(i * bw + 0.5, h - hh, Math.max(1, bw - 1), hh);
-    }
+  // Heatmap of all 108 bricks: brighter = higher within today's spread; amber/red = 5/20 mV under the median brick.
+  function drawBricks(b, idx) {
+    const have = b ? b.filter(v => v != null).sort((x, y) => x - y) : [], min = have[0], max = have[have.length - 1], med = have[have.length >> 1];
+    const base = cfg.oneBased ? 1 : 0;
+    $("bricks").innerHTML = Array.from({ length: 108 }, (_, i) => {
+      const v = b && b[i], n = i + base, w = i === idx ? " w" : "";
+      if (v == null) return `<span class="bk none${w}" title="Brick ${n}: no reading">${n}</span>`;
+      const under = (med - v) * 1000, a = Math.round(8 + (max > min ? (v - min) / (max - min) : 1) * 32);
+      return `<span class="bk${w}" data-tone="${under > 20 ? "bad" : under > 5 ? "warn" : ""}" style="--a:${a}%" title="Brick ${n}: ${v.toFixed(3)} V">${n}</span>`;
+    }).join("");
   }
 
   function drawChart(t) {
@@ -510,8 +509,8 @@
   }
   async function startTessie() {
     if (!tessieToken()) {
-      document.querySelector(".tools details").open = true; $("cfgTok").focus();
-      notice("Paste your Tessie API token in Settings first. It's saved on this device only.", "warn");
+      showTab("setup"); $("cfgTok").focus();
+      notice("Paste your Tessie API token in Setup first. It's saved on this device only.", "warn");
       return;
     }
     if (app.source === "car" || app.source === "demo") await disconnect();
@@ -556,7 +555,7 @@
     } catch (e) { tessieError(e); }
     finally { app.tessieBusy = false; }
   }
-  // Several cars on the Tessie account: a picker in Settings (remembered). Option() sets text safely.
+  // Several cars on the Tessie account: a picker in Setup (remembered). Option() sets text safely.
   function showCars(list) {
     $("cfgVinRow").hidden = list.length < 2;
     $("cfgVin").replaceChildren(...list.map(v => new Option(`${v.last_state?.display_name || "Car"} · …${String(v.vin).slice(-6)}`, v.vin)));
@@ -568,7 +567,7 @@
   });
   function tessieError(e) {
     const s = e && e.status;
-    if (s === 401 || s === 403) { notice("Tessie rejected the token. Paste a fresh one in Settings (Tessie app → Settings → API).", "bad"); disconnect(); return; }
+    if (s === 401 || s === 403) { notice("Tessie rejected the token. Paste a fresh one in Setup (Tessie app → Settings → API).", "bad"); disconnect(); return; }
     if (s === 429) { notice("Tessie says too many requests. Slowing down for a minute.", "warn"); if (app.tessieTimer) { clearInterval(app.tessieTimer); app.tessieTimer = setTimeout(() => { app.tessieTimer = setInterval(() => { if (!document.hidden) pollTessie(); }, 15000); }, 60000); } return; }
     if (s === 0) { notice(e.message, "bad"); disconnect(); return; }
     notice(`Couldn't reach Tessie (${e && e.message ? e.message : "network"}). Retrying every 10 seconds.`, "warn");
@@ -650,7 +649,27 @@
   document.querySelectorAll("#goalQuick [data-mi]").forEach(b => b.addEventListener("click", () => setGoal(+b.dataset.mi)));
   $("goalForm").addEventListener("submit", e => { e.preventDefault(); setGoal(Math.round(parseFloat(String($("goalMi").value).replace(/[^0-9.]/g, "")))); });
   $("goalClear").addEventListener("click", () => { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); });
-  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); syncAwake(); }
+  /* ---------------- tabs ----------------
+     Cockpit / Trip / Battery / Setup; the last one is remembered. Drive view always shows the cockpit. */
+  const TABS = ["cockpit", "trip", "battery", "setup"];
+  function showTab(name) {
+    if (!TABS.includes(name)) name = "cockpit";
+    if (cfg.tab !== name) { cfg.tab = name; store(KEY.cfg, cfg); }
+    for (const n of TABS) {
+      $(`view-${n}`).hidden = n !== name;
+      $(`tab-${n}`).setAttribute("aria-selected", String(n === name)); $(`tab-${n}`).tabIndex = n === name ? 0 : -1;
+    }
+    lastChart = 0; app.forceSlow = true;                    // the chart was sized while hidden: redraw it now
+  }
+  TABS.forEach((n, i) => {
+    $(`tab-${n}`).addEventListener("click", () => { showTab(n); window.scrollTo?.(0, 0); });
+    $(`tab-${n}`).addEventListener("keydown", e => {        // arrow keys move between tabs
+      const k = { ArrowRight: 1, ArrowLeft: -1 }[e.key]; if (!k) return;
+      const next = TABS[(i + k + TABS.length) % TABS.length]; showTab(next); $(`tab-${next}`).focus();
+    });
+  });
+  showTab(cfg.tab);
+  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) showTab("cockpit"); syncAwake(); }
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
   setDrive(!!cfg.drive);
 
@@ -710,7 +729,8 @@
       st.textContent = tone === "good" ? "Efficient" : tone === "warn" ? "A bit heavy" : tone === "bad" ? "Wasting range" : "Measuring";
       st.dataset.tone = tone;
     }
-    $("effTarget").textContent = target ? `Target ${target} Wh/mi${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(tripAvg)}` : ""}` : "";
+    el.dataset.word = String(!/^\d+$/.test(el.textContent));          // "Regen", "Parked"… set smaller than a number
+    $("effTarget").textContent = target ?`Target ${target} Wh/mi${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(tripAvg)}` : ""}` : "";
   }
 
   // Mile by mile: Wh/mi of each of the last 10 whole miles of this trip plus the mile in progress, colored vs target.

@@ -3,305 +3,446 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0d1013">
+<meta name="theme-color" content="#07090e">
 <title>Drive Energy</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap">
 <style>
-/* Instrument-cluster layout: hero gauges on top, chart + battery/trip/brick rail below. Dark-first for night driving. */
+/* OLED cockpit: four tabs (Cockpit / Trip / Battery / Setup), tabs on top on wide screens and docked at the bottom on phones.
+   Emerald = regen and good, cyan = pedal and the watched brick, amber = energy and caution, rose = waste. Dark-first for night driving. */
 :root{
-  --bg:#0d1013; --surface:#151a1f; --raised:#1c2228; --line:#262e35;
-  --fg:#e8ecef; --muted:#8b959d; --faint:#5b656d;
-  --energy:#f2a33a; --energy-soft:rgba(242,163,58,.16); --regen:#43c2a2; --rated:#7d8891;
-  --warn:#f2a33a; --bad:#ef6a5b;
-  --f-num:"Barlow Semi Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
-  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --bg:#07090e; --surface:#111622; --inset:#0b0f18; --raised:#192030; --line:#1e293b; --line2:#2a3649;
+  --fg:#f8fafc; --muted:#94a3b8; --faint:#64748b;
+  --regen:#34d399; --info:#22d3ee; --energy:#fbbf24; --energy-soft:rgba(251,191,36,.13); --warn:#fbbf24; --bad:#fb7185; --rated:#7c8ba1;
+  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-num:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   color-scheme:dark;
 }
 @media (prefers-color-scheme: light){:root{
-  --bg:#eef1f3; --surface:#fff; --raised:#f5f7f8; --line:#dce2e6; --fg:#12171b; --muted:#5a666e; --faint:#98a3aa;
-  --energy:#c96f0a; --energy-soft:rgba(201,111,10,.12); --regen:#108a6c; --rated:#8c979e; --warn:#c96f0a; --bad:#c9412f; color-scheme:light }}
+  --bg:#eef2f7; --surface:#fff; --inset:#f5f7fb; --raised:#eaeef4; --line:#dbe2ea; --line2:#c9d3df; --fg:#0b1220; --muted:#526075; --faint:#8a97a8;
+  --regen:#059669; --info:#0891b2; --energy:#d97706; --energy-soft:rgba(217,119,6,.12); --warn:#d97706; --bad:#e11d48; --rated:#7c8ba1; color-scheme:light }}
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;
-  padding:max(14px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
-.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
-.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
-.label{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:500}
+body{background:var(--bg);color:var(--fg);font:14.5px/1.45 var(--f-ui);-webkit-tap-highlight-color:transparent}
 button,select,input{font:inherit;color:inherit}
 button{cursor:pointer}
-:focus-visible{outline:2px solid var(--energy);outline-offset:2px}
+:focus-visible{outline:2px solid var(--info);outline-offset:2px}
 [hidden]{display:none!important}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-
-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.who{display:flex;align-items:center;gap:12px}
-h1{font-family:var(--f-num);font-weight:600;font-size:24px;margin:0;letter-spacing:.02em}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--raised);border:1px solid var(--line);font-size:12.5px;font-weight:500;white-space:nowrap}
-.chip i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
-.chip[data-s="live"] i{background:var(--regen);box-shadow:0 0 0 3px color-mix(in srgb,var(--regen) 25%,transparent)}
-.chip[data-s="connecting"] i,.chip[data-s="quiet"] i{background:var(--warn)}
-.chip[data-s="tessie"] i{background:var(--rated)}
-.chip[data-s="demo"]{border-style:dashed} .chip[data-s="demo"] i{background:var(--energy)}
-.btns{display:flex;gap:8px;flex-wrap:wrap}
-.btn{background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:14px;font-weight:600}
-.btn.primary{background:var(--energy);border-color:var(--energy);color:#16110a}
-.notice{border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--surface);border-radius:12px;padding:11px 14px}
-.notice[data-tone="bad"]{border-left-color:var(--bad)} .notice[data-tone="info"]{border-left-color:var(--rated)}
-.notice p{margin:0}
-
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
-.kv .v small{font-size:15px;font-weight:500;color:var(--muted);margin-left:3px}
-
-.grid{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
-@media (min-width:900px){.grid{grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)}}
-.rail{display:flex;flex-direction:column;gap:14px;min-width:0}
-.chead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
-.seg{display:inline-flex;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:3px}
-.seg button{background:none;border:0;border-radius:7px;padding:6px 12px;font:600 13px var(--f-num);color:var(--muted)}
-.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 0 0 1px var(--line)}
-#chart svg{width:100%;height:auto;display:block}
-#chart text{font-family:var(--f-num);font-size:12px;fill:var(--muted)}
-.empty{display:grid;place-items:center;text-align:center;min-height:220px;color:var(--muted)}
-.empty strong{display:block;color:var(--fg);margin-bottom:4px}
-.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:4px}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.legend b{width:16px;height:3px;border-radius:2px;background:var(--energy)} .legend b.r{background:none;height:0;border-top:2px dashed var(--rated)}
-
-h2{font:600 15px var(--f-num);letter-spacing:.06em;text-transform:uppercase;margin:0 0 12px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-h2 span{font:500 12px var(--f-body);letter-spacing:0;text-transform:none;color:var(--muted)}
-.kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px}
-.kv .v{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-size:23px;font-weight:600;line-height:1.1}
-.kv .v[data-tone="bad"]{color:var(--bad)} .kv .v[data-tone="warn"]{color:var(--warn)}
-.battery{height:40px;border:2px solid var(--line);border-radius:9px;position:relative;padding:3px;margin-bottom:12px}
-.battery .fill{height:100%;border-radius:5px;background:var(--regen);transition:width .6s}
-.battery .pct{position:absolute;inset:0;display:grid;place-items:center;font:700 19px var(--f-num)}
-.split{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--raised);margin:12px 0 10px}
-.split i{display:block}.split .d{background:var(--energy)}.split .p{background:var(--rated)}
-.rows{display:flex;flex-direction:column;gap:5px;font-size:14px}
-.rows div{display:flex;justify-content:space-between;gap:10px}
-.rows span:last-child{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
-.dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px}
-#bricks{width:100%;height:56px;display:block;margin-top:12px}
+.ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.label{font-size:12px;color:var(--muted);font-weight:500}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .note{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+.sub{font-size:12px;color:var(--muted)}
 .linkbtn{background:none;border:0;padding:0;color:var(--muted);text-decoration:underline;font-size:12.5px}
 
-.tools{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
-.cfg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}
-@media (max-width:600px){.cfg{grid-template-columns:1fr 1fr}.kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.cfg label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
-.cfg input[type=number],.cfg select{background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num);width:100%}
-.cfg .check{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--fg)}
-.pedal{margin-top:14px}
-.prow{display:flex;align-items:center;gap:10px;margin-bottom:5px}
-.prow .num{font-weight:600;font-size:16px}
-.brake{font:600 11.5px var(--f-body);letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--faint)}
-.brake[data-on="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
-.ptrack{position:relative;height:12px;background:var(--raised);border-radius:6px;overflow:hidden}
-.pgreen{position:absolute;top:0;bottom:0;left:15%;width:25%;background:color-mix(in srgb,var(--regen) 22%,transparent);border-left:2px solid var(--regen);border-right:2px solid var(--regen)}
-.pfill{position:absolute;inset:3px auto 3px 0;border-radius:3px;background:var(--rated);transition:width .15s linear}
-.pfill[data-zone="RIGHT"]{background:var(--regen)} .pfill[data-zone="LIGHT"]{background:var(--warn)} .pfill[data-zone="TOO_MUCH"]{background:var(--bad)}
-.pscale{position:relative;height:14px;font:500 11px var(--f-num);color:var(--muted)}
-.pscale span{position:absolute;transform:translateX(-50%);top:2px}
-.zone{font-size:12.5px;color:var(--muted);margin-right:auto}
-.tip2{margin:6px 2px 0;font-size:14px;color:var(--muted);min-height:20px}
-.toggle{margin-top:12px;font-size:13px;padding:6px 12px}
-.toggle[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#08130f}
-.tip{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--raised);font-size:19px;font-weight:600;line-height:1.3;border-left:4px solid var(--faint);min-height:52px}
-.tip[data-tone="good"]{border-left-color:var(--regen)} .tip[data-tone="warn"]{border-left-color:var(--warn)} .tip[data-tone="bad"]{border-left-color:var(--bad)}
-.kv .v[data-tone="good"]{color:var(--regen)}
-.stable{display:flex;flex-direction:column;gap:4px;margin-top:8px}
-.scurve{width:100%;height:auto;display:block;margin-top:6px}
-.scurve text{font:500 10.5px var(--f-num);fill:var(--muted)}
-.stable2{display:flex;flex-direction:column;gap:2px;margin-top:6px;font-size:13px}
-.stable2 div{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:3px 6px;border-radius:6px;border:1px solid transparent}
-.stable2 .sweet{background:color-mix(in srgb,var(--energy) 16%,transparent)} .stable2 .cur{border-color:var(--fg)}
-/* Efficiency cluster: gauge (the king metric) + KPI tiles + horizontal power flow */
-.cluster{display:grid;grid-template-columns:minmax(240px,320px) minmax(0,1fr);gap:22px;align-items:start}
-@media (max-width:760px){.cluster{grid-template-columns:1fr}}
-.gaugewrap{position:relative;max-width:340px;margin:0 auto;width:100%}
+/* header */
+.top{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);
+  padding:max(10px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left))}
+.top .in{max-width:1180px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}
+.mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;flex:none;color:var(--regen);background:color-mix(in srgb,var(--regen) 11%,transparent);border:1px solid color-mix(in srgb,var(--regen) 32%,transparent)}
+.mark .ic{width:19px;height:19px}
+h1{font:700 16px/1.2 var(--f-ui);letter-spacing:-.01em;margin:0}
+.chip{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.chip[data-s="live"] i{background:var(--regen);box-shadow:0 0 0 3px color-mix(in srgb,var(--regen) 25%,transparent)}
+.chip[data-s="live"]{color:var(--fg)}
+.chip[data-s="connecting"] i,.chip[data-s="quiet"] i{background:var(--warn);animation:pulse 1.4s ease-in-out infinite}
+.chip[data-s="tessie"] i{background:var(--info)}
+.chip[data-s="demo"] i{background:var(--energy)}
+@keyframes pulse{50%{opacity:.35}}
+.actions{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;max-width:100%}
+.actions::-webkit-scrollbar{display:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;background:var(--raised);border:1px solid var(--line2);border-radius:10px;padding:8px 13px;font:600 13px var(--f-ui);color:var(--fg)}
+.btn:hover{border-color:var(--faint)}
+.btn .ic{width:15px;height:15px}
+.btn.primary{background:var(--regen);border-color:var(--regen);color:#04130c}
+.btn.danger{background:color-mix(in srgb,var(--bad) 10%,transparent);border-color:color-mix(in srgb,var(--bad) 28%,transparent);color:var(--bad)}
+.btn.sm{padding:6px 11px;font-size:12.5px}
+#demoBtn .ic{color:var(--regen)} #tessieBtn .ic{color:var(--info)}
+@media (max-width:767px){#connectBtn,#disconnectBtn{order:-1}}       /* the main action stays in view when the row scrolls */
+#driveBtn[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#04130c}
+
+/* page + tabs */
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px;
+  padding:16px max(16px,env(safe-area-inset-right)) calc(86px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.tabbar{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.tabs{display:flex;gap:6px}
+.tab{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:10px;border:1px solid transparent;background:none;color:var(--muted);font:600 13.5px var(--f-ui)}
+.tab:hover{color:var(--fg);background:var(--surface)}
+.tab[aria-selected="true"]{color:var(--regen);background:color-mix(in srgb,var(--regen) 13%,transparent);border-color:color-mix(in srgb,var(--regen) 30%,transparent)}
+.tab .short{display:none}
+.topstats{display:flex;gap:16px;font:500 12px var(--f-num);color:var(--muted)}
+.topstats b{color:var(--fg);font-weight:600}
+@media (min-width:768px){.wrap{padding-bottom:max(28px,env(safe-area-inset-bottom))}}
+@media (max-width:767px){
+  .tabbar{display:contents}
+  .topstats{display:none}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;justify-content:space-around;background:color-mix(in srgb,var(--bg) 95%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);padding:6px 8px max(6px,env(safe-area-inset-bottom))}
+  .tab{flex-direction:column;gap:3px;padding:5px 14px;font-size:10.5px;border:0}
+  .tab[aria-selected="true"]{background:none}
+  .tab .ic{width:21px;height:21px}
+  .tab .long{display:none} .tab .short{display:inline}
+}
+.notice{border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--surface);border-radius:12px;padding:11px 14px}
+.notice[data-tone="bad"]{border-left-color:var(--bad)} .notice[data-tone="info"]{border-left-color:var(--info)}
+.notice p{margin:0}
+
+/* cards */
+.view{display:flex;flex-direction:column;gap:16px}
+.g12{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1024px){.g12{grid-template-columns:repeat(12,minmax(0,1fr))} .c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c12{grid-column:1/-1}}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;min-width:0}
+.card h2{font:700 15.5px/1.3 var(--f-ui);margin:0}
+.ttl{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.ttl p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.chead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.tile{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 13px;min-width:0}
+.tile .v,.kpi .v{font:700 21px/1.2 var(--f-num);font-variant-numeric:tabular-nums;margin-top:3px}
+.v small{font:500 12px var(--f-ui);color:var(--muted);margin-left:3px}
+.v[data-tone="good"]{color:var(--regen)} .v[data-tone="warn"]{color:var(--warn)} .v[data-tone="bad"]{color:var(--bad)}
+.tile.watch{border-color:color-mix(in srgb,var(--info) 45%,transparent)} .tile.watch .label{color:var(--info)}
+
+/* coach banner */
+.coach{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px 16px}
+.cicon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--raised);color:var(--muted)}
+.cicon .ic{width:20px;height:20px}
+.coach:has(#tip[data-tone="good"]) .cicon{color:var(--regen);background:color-mix(in srgb,var(--regen) 13%,transparent)}
+.coach:has(#tip[data-tone="warn"]) .cicon{color:var(--warn);background:color-mix(in srgb,var(--warn) 13%,transparent)}
+.coach:has(#tip[data-tone="bad"]) .cicon{color:var(--bad);background:color-mix(in srgb,var(--bad) 13%,transparent)}
+.coach:has(#tip[data-tone="bad"]){border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.cmain{flex:1;min-width:0}
+.tip{margin:0;font-size:17px;font-weight:600;line-height:1.3}
+.tip[data-tone="idle"]{color:var(--muted);font-weight:500}
+.tip2{margin:3px 0 0;font-size:13.5px;color:var(--muted)}
+.tip2:empty{display:none}
+.toggle{flex:none;border-radius:99px;padding:6px 12px;font:600 12px var(--f-ui);background:var(--inset);border:1px solid var(--line2);color:var(--muted)}
+.toggle[aria-pressed="true"]{background:color-mix(in srgb,var(--regen) 15%,transparent);border-color:var(--regen);color:var(--regen)}
+@media (max-width:560px){.coach{flex-wrap:wrap}.cmain{flex-basis:calc(100% - 56px)}.toggle{margin-left:56px}}
+
+/* hero: the gauge is the king metric */
+.hhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.scorepill{text-align:right;background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:8px 14px}
+.scorepill .v{font:700 26px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
+.scoresub{max-width:240px;text-align:right;margin-top:6px}
+.hbody{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:20px;align-items:center;margin-top:4px}
+@media (max-width:640px){.hbody{grid-template-columns:minmax(0,1fr)}}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 13px;min-width:0}
+.kpi .v{font-size:26px}
+.gaugewrap{position:relative;max-width:320px;margin:0 auto;width:100%}
 .effgauge{width:100%;height:auto;display:block}
-.effgauge .arcbg{fill:none;stroke:var(--raised);stroke-width:18;stroke-linecap:round}
-.effgauge .zone{fill:none;stroke-width:4;stroke-linecap:butt;opacity:.9}
+.effgauge .arcbg{fill:none;stroke:var(--inset);stroke-width:18;stroke-linecap:round}
+.effgauge .zone{fill:none;stroke-width:4;stroke-linecap:butt;opacity:.85}
 .effgauge .val{fill:none;stroke-width:18;stroke-linecap:round;transition:stroke-dasharray .45s ease,stroke .3s}
-.effgauge text{font:500 11px var(--f-num);fill:var(--muted)}
+.effgauge text{font:500 10.5px var(--f-num);fill:var(--faint)}
 .effgauge .tgt{stroke:var(--fg);stroke-width:3}
-.miles{margin-top:14px}
-.mhead{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}
-.mbars{position:relative;display:flex;align-items:flex-end;gap:5px;height:74px;padding-bottom:16px}
-.mb{position:relative;flex:1 1 0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;min-width:0}
-.mb i{display:block;border-radius:4px 4px 1px 1px;background:var(--rated)}
-.mb b{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font:500 10.5px var(--f-num);color:var(--muted)}
-.mb[data-tone="good"] i{background:var(--regen)} .mb[data-tone="warn"] i{background:var(--warn)} .mb[data-tone="bad"] i{background:var(--bad)}
-.mb.partial i{opacity:.55}
-.mtarget{position:absolute;left:0;right:0;border-top:2px dashed var(--fg);opacity:.45;pointer-events:none}
-.gcenter{position:absolute;left:0;right:0;top:34%;text-align:center;pointer-events:none}
-.gnum{font:700 56px/1 var(--f-num);font-variant-numeric:tabular-nums}
-.gnum small{display:none}
+.gcenter{position:absolute;left:0;right:0;top:33%;text-align:center;pointer-events:none}
+.gnum{font:700 54px/1 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.gnum[data-word="true"]{font:700 32px/1.2 var(--f-ui);letter-spacing:-.01em}
 .gnum[data-tone="good"]{color:var(--regen)} .gnum[data-tone="warn"]{color:var(--warn)} .gnum[data-tone="bad"]{color:var(--bad)}
-.gunit{font-size:12.5px;color:var(--muted);margin-top:4px}
-.gfoot{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:-6px}
-.gstate{font:600 13px var(--f-body);padding:4px 12px;border-radius:99px;background:var(--raised);border:1px solid var(--line)}
-.gstate[data-tone="good"]{background:color-mix(in srgb,var(--regen) 18%,var(--surface));border-color:var(--regen);color:var(--regen)}
+.gunit{font-size:12.5px;color:var(--muted);margin-top:5px}
+.gfoot{display:flex;flex-direction:column;align-items:center;gap:5px;margin-top:-6px}
+.gstate{font:600 12.5px var(--f-ui);padding:4px 12px;border-radius:99px;background:var(--inset);border:1px solid var(--line2)}
+.gstate[data-tone="good"]{background:color-mix(in srgb,var(--regen) 14%,transparent);border-color:var(--regen);color:var(--regen)}
 .gstate[data-tone="warn"]{border-color:var(--warn);color:var(--warn)} .gstate[data-tone="bad"]{border-color:var(--bad);color:var(--bad)}
-.gtarget{font-size:12.5px;color:var(--muted)}
-.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-@media (max-width:1000px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.kpi{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0}
-.kpi .v{font:600 30px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
-.kpi .v small{font-size:13px;font-weight:500;color:var(--muted);margin-left:3px}
-.kpi .sub{font-size:12px;color:var(--muted);margin-top:2px}
-.kpi.score .v{font-size:36px}
-.kpi .v[data-tone="good"]{color:var(--regen)} .kpi .v[data-tone="warn"]{color:var(--warn)} .kpi .v[data-tone="bad"]{color:var(--bad)}
-.flow{margin-top:16px}
-.frow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
-.fside{font:600 11.5px var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.gtarget{font-size:12px;color:var(--muted);text-align:center}
+.flow{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.frow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px}
+.fside{font:600 11px var(--f-num);letter-spacing:.06em;text-transform:uppercase}
 .fside.regen{color:var(--regen)} .fside.use{color:var(--energy)}
-.fstate{font:600 15px var(--f-num);text-align:center}
-.ftrack{position:relative;height:22px;border-radius:11px;background:var(--raised);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
-.fzone{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--regen) 16%,transparent)}
+.fstate{font:600 14px var(--f-num);text-align:center}
+.ftrack{position:relative;height:20px;border-radius:10px;background:var(--inset);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
+.fzone{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--regen) 13%,transparent)}
 .fzr{border-left:2px solid var(--regen)} .fzu{border-right:2px solid var(--regen)}
 .ffill{position:absolute;top:4px;bottom:4px;will-change:transform}
 .ffill.fu{left:var(--z,28%);right:0;transform-origin:left;transform:scaleX(0);border-radius:0 6px 6px 0;background:var(--energy)}
 .ffill.fr{left:0;right:calc(100% - var(--z,28%));transform-origin:right;transform:scaleX(0);border-radius:6px 0 0 6px;background:var(--regen)}
-.ffill.fu[data-tone="ok"]{background:var(--regen)} .ffill.fu[data-tone="way"]{background:var(--bad)} .ffill.fr[data-tone="hard"]{background:var(--warn)}
+.ffill.fu[data-tone="ok"]{background:var(--info)} .ffill.fu[data-tone="way"]{background:var(--bad)} .ffill.fr[data-tone="hard"]{background:var(--warn)}
 .fzero{position:absolute;top:-2px;bottom:-2px;left:var(--z,28%);width:2px;margin-left:-1px;background:var(--fg)}
-.fticks{position:relative;height:16px;font:500 11px var(--f-num);color:var(--muted)}
+.fticks{position:relative;height:16px;font:500 10.5px var(--f-num);color:var(--faint)}
 .fticks span{position:absolute;top:3px;transform:translateX(-50%)}
-body.drive .gnum{font-size:72px} body.drive .kpi .v{font-size:34px} body.drive .ftrack{height:30px}
-.cfgrow2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.cfgrow2 label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
-.cfgrow2 input,.cfgrow2 select{background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num);width:100%;color:var(--fg)}
-.planbig{font:600 22px var(--f-num)}
-/* Drive view: strip the header to status + Drive view; landscape layout for a mounted phone */
-body.drive header .btns .btn:not(#driveBtn){display:none}
-body.drive.offline header .btns #connectBtn{display:inline-flex}
-@media (orientation:landscape) and (max-height:540px){
-  body.drive{padding-block:8px 8px}
-  body.drive .cluster{grid-template-columns:minmax(220px,36vw) minmax(0,1fr);gap:14px}
-  body.drive .gaugewrap{max-width:none} body.drive .gnum{font-size:58px}
-  body.drive .kpis{grid-template-columns:repeat(4,minmax(0,1fr))} body.drive .kpi .v{font-size:24px} body.drive .kpi .sub{display:none}
-  body.drive .pscale, body.drive .tip2, body.drive .goalform{display:none!important}
-  body.drive .tip{font-size:19px;min-height:auto;margin-top:10px} body.drive .guide{margin-top:10px}
-  body.drive header h1{font-size:18px}
-}
-/* Drives list + summary sheet */
-.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-bottom:10px}
-.tv{font:600 24px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
+
+/* pedal */
+.prow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.prow .eyebrow{margin-right:auto}
+.pzone{font-size:12.5px;color:var(--muted)}
+.pnum{font:700 18px var(--f-num)}
+.brake{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:99px;border:1px solid var(--line2);color:var(--faint)}
+.brake[data-on="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
+.ptrack{position:relative;height:14px;background:var(--inset);border-radius:7px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
+.pgreen{position:absolute;top:0;bottom:0;left:15%;width:25%;background:color-mix(in srgb,var(--info) 15%,transparent);border-left:1px solid color-mix(in srgb,var(--info) 45%,transparent);border-right:1px solid color-mix(in srgb,var(--info) 45%,transparent)}
+.pfill{position:absolute;inset:3px auto 3px 0;border-radius:4px;background:var(--rated);transition:width .15s linear}
+.pfill[data-zone="RIGHT"]{background:var(--info)} .pfill[data-zone="LIGHT"]{background:var(--warn)} .pfill[data-zone="TOO_MUCH"]{background:var(--bad)}
+.pscale{position:relative;height:16px;font:500 10.5px var(--f-num);color:var(--faint)}
+.pscale span{position:absolute;transform:translateX(-50%);top:3px}
+.mini{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.mini .tile .v{font-size:18px}
+
+/* mile by mile */
+.mbars{position:relative;display:flex;align-items:flex-end;gap:6px;height:84px;padding-bottom:16px}
+.mb{position:relative;flex:1 1 0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;min-width:0}
+.mb i{display:block;border-radius:4px 4px 1px 1px;background:var(--rated)}
+.mb b{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font:500 10px var(--f-num);color:var(--muted)}
+.mb[data-tone="good"] i{background:var(--regen)} .mb[data-tone="warn"] i{background:var(--warn)} .mb[data-tone="bad"] i{background:var(--bad)}
+.mb.partial i{opacity:.5}
+.mtarget{position:absolute;left:0;right:0;border-top:2px dashed var(--fg);opacity:.4;pointer-events:none}
+.mfoot{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.mfoot .v{display:inline;font:700 15px var(--f-num);color:var(--fg);margin:0 0 0 4px}
+
+/* max-range guide */
+.guide{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:700px){.guide{grid-template-columns:1fr 1fr}}
+.gchip{display:flex;flex-direction:column;gap:3px;padding:11px 13px;border-radius:14px;background:var(--surface);border:1px solid var(--line);text-align:left;min-width:0}
+.gbtn{cursor:pointer;font:inherit;color:inherit;border-color:color-mix(in srgb,var(--info) 35%,var(--line))}
+.glabel{font-size:12px;color:var(--muted)}
+.gbtn .glabel{color:var(--info);display:flex;align-items:center;gap:6px}
+.gval{font:600 14.5px/1.3 var(--f-num);font-variant-numeric:tabular-nums}
+.gchip[data-tone="good"]{border-color:color-mix(in srgb,var(--regen) 55%,transparent)} .gchip[data-tone="good"] .gval{color:var(--regen)}
+.gchip[data-tone="warn"]{border-color:color-mix(in srgb,var(--warn) 55%,transparent)}
+.gchip[data-tone="bad"]{border-color:color-mix(in srgb,var(--bad) 60%,transparent)} .gchip[data-tone="bad"] .gval{color:var(--bad)}
+.goalform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
+.goalform label{font-size:13px;color:var(--muted);width:100%}
+.quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%}
+.quick .btn{padding:10px 0;font:600 15px var(--f-num)}
+.field,.goalform input{background:var(--inset);border:1px solid var(--line2);border-radius:9px;padding:9px 11px;font:15px var(--f-num);color:var(--fg);width:100%}
+.goalform input{flex:1 1 120px;width:auto}
+select.field{font-family:var(--f-ui)}
+
+/* trip */
+.split{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--inset);margin:14px 0 10px}
+.split i{display:block}.split .d{background:var(--energy)}.split .p{background:var(--rated)}
+.rows{display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.rows div{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.rows span:last-child{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+.dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px}
+.planbig{font:700 22px var(--f-num)} .planbig[data-tone="good"]{color:var(--regen)}
+.sect{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.seg{display:inline-flex;background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{background:none;border:0;border-radius:7px;padding:5px 11px;font:600 12.5px var(--f-num);color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--raised);color:var(--fg);box-shadow:0 0 0 1px var(--line2)}
+#chart svg{width:100%;height:auto;display:block}
+#chart text{font-family:var(--f-num);font-size:11px;fill:var(--faint)}
+.empty{display:grid;place-items:center;text-align:center;min-height:220px;color:var(--muted)}
+.empty strong{display:block;color:var(--fg);margin-bottom:4px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend b{width:16px;height:3px;border-radius:2px;background:var(--energy)} .legend b.r{background:none;height:0;border-top:2px dashed var(--rated)}
+.scurve{width:100%;height:auto;display:block;margin-top:4px}
+.scurve text{font:500 10px var(--f-num);fill:var(--faint)}
+.stable2{display:flex;flex-direction:column;gap:2px;margin-top:8px;font-size:13px}
+.stable2 div{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:4px 8px;border-radius:7px;border:1px solid transparent}
+.stable2 .sweet{background:color-mix(in srgb,var(--energy) 14%,transparent)} .stable2 .cur{border-color:var(--info)}
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.tgrid>div{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0}
+.tv{font:700 22px/1.2 var(--f-num);font-variant-numeric:tabular-nums}
 .tv[data-tone="good"],#driveTrend [data-tone="good"]{color:var(--regen)} .tv[data-tone="bad"],#driveTrend [data-tone="bad"]{color:var(--bad)}
 .trendbars{width:100%;height:46px;display:block;margin-bottom:12px}
 .dlist{display:flex;flex-direction:column;gap:6px}
-.drow{display:grid;grid-template-columns:minmax(0,1fr) auto auto 38px;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--raised);border:1px solid var(--line);text-align:left;font-size:13.5px}
-.drow .num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
+.drow{display:grid;grid-template-columns:minmax(0,1fr) auto auto 40px;gap:10px;align-items:center;padding:9px 11px;border-radius:11px;background:var(--inset);border:1px solid var(--line);text-align:left;font-size:13px}
+.drow:hover{border-color:var(--line2)}
+.drow .num{font-weight:600}
 .dwhen{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dscore{font:700 15px var(--f-num);text-align:center;border-radius:8px;padding:2px 0}
+.dscore{font:700 14.5px var(--f-num);text-align:center}
 .dscore[data-tone="good"]{color:var(--regen)} .dscore[data-tone="warn"]{color:var(--warn)} .dscore[data-tone="bad"]{color:var(--bad)}
-.overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:grid;place-items:end center;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+
+/* battery + bricks */
+.battery{height:46px;border:2px solid var(--line2);border-radius:11px;position:relative;padding:4px;margin-bottom:14px}
+.battery .fill{height:100%;border-radius:6px;background:linear-gradient(90deg,color-mix(in srgb,var(--regen) 70%,transparent),var(--regen));transition:width .6s}
+.battery .pct{position:absolute;inset:0;display:grid;place-items:center;font:700 19px var(--f-num)}
+.bgrid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:5px;margin-top:16px}
+@media (min-width:640px){.bgrid{grid-template-columns:repeat(18,minmax(0,1fr))}}
+.bk{height:26px;border-radius:6px;display:grid;place-items:center;font:500 10px var(--f-num);color:var(--fg);
+  background:color-mix(in srgb,var(--regen) var(--a,20%),transparent);border:1px solid color-mix(in srgb,var(--regen) 25%,transparent)}
+.bk[data-tone="warn"]{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent);border-color:color-mix(in srgb,var(--warn) 50%,transparent)}
+.bk[data-tone="bad"]{color:var(--bad);background:color-mix(in srgb,var(--bad) 20%,transparent);border-color:color-mix(in srgb,var(--bad) 60%,transparent)}
+.bk.none{background:var(--inset);border-color:var(--line);color:var(--faint)}
+.bk.w{outline:2px solid var(--info);outline-offset:1px;font-weight:700}
+
+/* setup */
+.cfg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:520px){.cfg{grid-template-columns:1fr}}
+.cfg label{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted)}
+.cfg .check{flex-direction:row;align-items:center;gap:10px;font-size:14px;color:var(--fg);grid-column:1/-1}
+.cfg .check input{width:18px;height:18px;accent-color:var(--regen)}
+.cfg .wide{grid-column:1/-1}
+details summary{cursor:pointer;font-weight:600}
+.diagtext{font:12px/1.45 var(--f-num);background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;max-height:420px;overflow-y:auto;user-select:text;-webkit-user-select:text}
+footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:12px}
+
+/* drive summary sheet */
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:grid;place-items:end center;
+  padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
 @media (min-width:700px){.overlay{place-items:center}}
-.sheet{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;width:min(560px,100%);max-height:90vh;overflow-y:auto}
+.sheet{background:var(--surface);border:1px solid var(--line2);border-radius:20px;padding:20px;width:min(560px,100%);max-height:90vh;overflow-y:auto}
 .shead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}
-.shead h3{margin:0;font:600 20px var(--f-num)}
-.sscore{display:flex;flex-direction:column;align-items:center;justify-content:center;width:76px;height:76px;border-radius:50%;border:4px solid var(--line);flex:none}
-.sscore span{font:700 28px/1 var(--f-num)} .sscore small{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.shead h3{margin:0;font:700 19px var(--f-ui)}
+.sscore{display:flex;flex-direction:column;align-items:center;justify-content:center;width:76px;height:76px;border-radius:50%;border:4px solid var(--line2);flex:none}
+.sscore span{font:700 26px/1 var(--f-num)} .sscore small{font-size:10.5px;color:var(--muted)}
 .sscore[data-tone="good"]{border-color:var(--regen)} .sscore[data-tone="warn"]{border-color:var(--warn)} .sscore[data-tone="bad"]{border-color:var(--bad)}
 .sgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 @media (max-width:480px){.sgrid{grid-template-columns:1fr 1fr}}
-.scell{background:var(--raised);border-radius:10px;padding:9px 10px;min-width:0}
-.sv{font:600 21px/1.15 var(--f-num);font-variant-numeric:tabular-nums}
-.scell .sub{font-size:11.5px;color:var(--muted)}
-.shabit{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--raised);border-left:4px solid var(--warn)}
-.shabit[data-tone="good"]{border-left-color:var(--regen)} .shabit p{margin:4px 0 0;font-size:15.5px;font-weight:500}
+.scell{background:var(--inset);border:1px solid var(--line);border-radius:11px;padding:9px 11px;min-width:0}
+.sv{font:700 19px/1.2 var(--f-num);font-variant-numeric:tabular-nums}
+.scell .sub{font-size:11.5px}
+.shabit{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--inset);border-left:4px solid var(--warn)}
+.shabit[data-tone="good"]{border-left-color:var(--regen)} .shabit p{margin:4px 0 0;font-size:15px;font-weight:500}
+
+/* Drive view: the cockpit only, bigger type, header down to status + Drive view */
+body.drive .tabbar, body.drive footer, body.drive .notice[data-tone="info"], body.drive .mini{display:none!important}
+body.drive .actions .btn:not(#driveBtn){display:none}
+body.drive.offline .actions #connectBtn{display:inline-flex}
+body.drive .wrap{padding-bottom:max(16px,env(safe-area-inset-bottom))}
+body.drive .tip{font-size:22px} body.drive .tip2{font-size:16px}
+body.drive .gnum{font-size:70px} body.drive .gnum[data-word="true"]{font-size:40px} body.drive .kpi .v{font-size:30px} body.drive .ftrack{height:28px} body.drive .gval{font-size:17px}
 body.drive .overlay .sheet{font-size:16px}
-/* Max-range guide strip */
-.guide{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}
-.gchip{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:12px;background:var(--raised);border:1px solid var(--line);text-align:left;min-width:0}
-.gbtn{cursor:pointer;font:inherit;color:inherit}
-.glabel{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.gval{font:600 15.5px/1.25 var(--f-num);font-variant-numeric:tabular-nums}
-.gchip[data-tone="good"]{border-color:var(--regen)} .gchip[data-tone="good"] .gval{color:var(--regen)}
-.gchip[data-tone="warn"]{border-color:var(--warn)} .gchip[data-tone="bad"]{border-color:var(--bad)} .gchip[data-tone="bad"] .gval{color:var(--bad)}
-@media (max-width:560px){.guide{grid-template-columns:1fr 1fr}}
-.goalform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
-.goalform label{font-size:13px;color:var(--muted);width:100%}
-.quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%}
-.quick .btn{padding:10px 0;font:600 16px var(--f-num)}
-.goalform{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:12px}
-.goalform input{background:var(--surface)!important}
-.goalform input{flex:1 1 120px;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num)}
-/* Drive view: only what helps while driving */
-body.drive .grid, body.drive .tools, body.drive #diagPanel, body.drive footer, body.drive .notice[data-tone="info"]{display:none!important}
-body.drive .tip{font-size:23px;min-height:64px} body.drive .tip2{font-size:16px}
-body.drive .gval{font-size:19px}
-#driveBtn[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#08130f}
-.diagtext{font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--raised);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;max-height:420px;overflow-y:auto;user-select:text;-webkit-user-select:text}
-footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:12.5px}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (orientation:landscape) and (max-height:540px){
+  body.drive .top{position:static;padding-block:6px}
+  body.drive .wrap{padding-top:8px;gap:10px}
+  body.drive .g12{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px}
+  body.drive .hbody{grid-template-columns:minmax(200px,40%) minmax(0,1fr);gap:12px}
+  body.drive .gnum{font-size:54px} body.drive .kpi .v{font-size:22px} body.drive .kpi .sub,body.drive .pscale,body.drive .goalform{display:none!important}
+  body.drive .tip{font-size:19px} body.drive .card,body.drive .coach{padding:12px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="who">
-      <h1>Drive Energy</h1>
-      <span class="chip" id="chip" data-s="off"><i></i><span id="chipText">Not connected</span></span>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<!-- Icons: Lucide 0.460.0 (ISC License, lucide.dev), inlined so the page works offline -->
+<symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+<symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></symbol>
+<symbol id="i-bluetooth" viewBox="0 0 24 24"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+<symbol id="i-chart-column" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+<symbol id="i-battery-charging" viewBox="0 0 24 24"><path d="M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/><path d="M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1"/><path d="m11 7-3 5h4l-3 5"/><line x1="22" x2="22" y1="11" y2="13"/></symbol>
+<symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></symbol>
+<symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+<symbol id="i-car" viewBox="0 0 24 24"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+<symbol id="i-circle-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+<symbol id="i-unplug" viewBox="0 0 24 24"><path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol>
+<symbol id="i-bluetooth-searching" viewBox="0 0 24 24"><path d="m7 7 10 10-5 5V2l5 5L7 17"/><path d="M20.83 14.83a4 4 0 0 0 0-5.66"/><path d="M18 12h.01"/></symbol>
+</svg>
+<header class="top">
+  <div class="in">
+    <div class="brand">
+      <div class="mark"><svg class="ic" aria-hidden="true"><use href="#i-zap"/></svg></div>
+      <div>
+        <h1>Drive Energy</h1>
+        <span class="chip" id="chip" data-s="off"><i></i><span id="chipText">Not connected</span></span>
+      </div>
     </div>
-    <div class="btns">
-      <button class="btn primary" id="connectBtn" type="button">Connect car</button>
-      <button class="btn" id="chooseBtn" type="button" title="Pick a different Bluetooth adapter">Choose adapter</button>
-      <button class="btn" id="disconnectBtn" type="button" hidden>Disconnect</button>
-      <button class="btn" id="tessieBtn" type="button">Tessie</button>
-      <button class="btn" id="driveBtn" type="button" aria-pressed="false">Drive view</button>
-      <button class="btn" id="demoBtn" type="button">Demo</button>
+    <div class="actions">
+      <button class="btn" id="demoBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span id="demoLbl">Demo</span></button>
+      <button class="btn" id="tessieBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-cloud"/></svg><span id="tessieLbl">Tessie</span></button>
+      <button class="btn" id="driveBtn" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-car"/></svg>Drive view</button>
+      <button class="btn" id="chooseBtn" type="button" title="Pick a different Bluetooth adapter"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button>
+      <button class="btn" id="disconnectBtn" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-unplug"/></svg>Disconnect</button>
+      <button class="btn primary" id="connectBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth"/></svg>Connect car</button>
     </div>
-  </header>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="tabbar">
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" id="tab-cockpit" type="button" role="tab" aria-controls="view-cockpit" aria-selected="true"><svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg><span class="long">Live cockpit</span><span class="short">Cockpit</span></button>
+      <button class="tab" id="tab-trip" type="button" role="tab" aria-controls="view-trip" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-chart-column"/></svg><span class="long">Trip &amp; efficiency</span><span class="short">Trip</span></button>
+      <button class="tab" id="tab-battery" type="button" role="tab" aria-controls="view-battery" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-battery-charging"/></svg><span class="long">Pack &amp; bricks</span><span class="short">Battery</span></button>
+      <button class="tab" id="tab-setup" type="button" role="tab" aria-controls="view-setup" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span class="long">Adapter &amp; setup</span><span class="short">Setup</span></button>
+    </nav>
+    <div class="topstats"><span>Charge <b id="topSoc">—</b></span><span>Pack <b id="topTemp">—</b></span></div>
+  </div>
 
   <div class="notice" id="notice" hidden><p id="noticeText"></p></div>
 
-  <section class="panel cluster" aria-label="Efficiency">
-    <div class="gaugewrap">
-      <svg id="effGauge" class="effgauge" viewBox="0 0 240 200" role="img" aria-label="Efficiency gauge: watt-hours per mile now against your target"></svg>
-      <div class="gcenter">
-        <div class="gnum" id="inst">—</div>
-        <div class="gunit" id="instSub">Wh/mi now</div>
+  <!-- ============ Cockpit ============ -->
+  <section class="view" id="view-cockpit" role="tabpanel" aria-labelledby="tab-cockpit">
+    <section class="coach" aria-label="Coach">
+      <div class="cicon"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg></div>
+      <div class="cmain">
+        <p class="tip" id="tip" data-tone="idle">Connect the car to start coaching.</p>
+        <p class="tip2" id="tip2"></p>
+        <p class="sr" id="tipSay" aria-live="polite"></p>
       </div>
-      <div class="gfoot">
-        <span class="gstate" id="effState" data-tone="">Waiting for the car</span>
-        <span class="gtarget" id="effTarget"></span>
+      <button class="toggle" id="cruiseBtn" type="button" aria-pressed="false">Cruise / Autopilot on</button>
+    </section>
+
+    <div class="g12">
+      <section class="card hero c7" aria-label="Efficiency">
+        <div class="hhead">
+          <span class="eyebrow">Consumption now</span>
+          <div>
+            <div class="scorepill"><div class="label">Trip score</div><div class="v" id="effScore">—</div></div>
+            <div class="sub scoresub" id="effScoreSub">this trip</div>
+          </div>
+        </div>
+        <div class="hbody">
+          <div class="gaugewrap">
+            <svg id="effGauge" class="effgauge" viewBox="0 0 240 200" role="img" aria-label="Efficiency gauge: watt-hours per mile now against your target"></svg>
+            <div class="gcenter">
+              <div class="gnum" id="inst">—</div>
+              <div class="gunit" id="instSub">Wh/mi now</div>
+            </div>
+            <div class="gfoot">
+              <span class="gstate" id="effState" data-tone="">Waiting for the car</span>
+              <span class="gtarget" id="effTarget"></span>
+            </div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><div class="label">Range at this pace</div><div class="v" id="proj">—</div><div class="sub" id="projSub">—</div></div>
+            <div class="kpi"><div class="label" id="avgLabel">Avg · last 15 mi</div><div class="v" id="avg">—</div><div class="sub" id="avgSub">builds as you drive</div></div>
+            <div class="kpi"><div class="label">Power</div><div class="v" id="pw">—</div><div class="sub" id="pwSub">waiting for pack data</div></div>
+          </div>
+        </div>
+        <div class="flow" aria-label="Power flow: regen to the left, power used to the right">
+          <div class="frow"><span class="fside regen">◀ Regen</span><span class="fstate" id="flowState">—</span><span class="fside use">Power ▶</span></div>
+          <div class="ftrack" id="fTrack">
+            <div class="fzone fzr" id="fZoneR" hidden></div><div class="fzone fzu" id="fZoneU" hidden></div>
+            <div class="ffill fr" id="fRegen"></div><div class="ffill fu" id="fUse"></div>
+            <div class="fzero"></div>
+          </div>
+          <div class="fticks" id="fTicks"></div>
+        </div>
+      </section>
+
+      <div class="stack c5">
+        <section class="card" aria-label="Accelerator">
+          <div class="prow"><span class="eyebrow">Accelerator</span><span class="pzone" id="pedalZone"></span><span class="pnum" id="pedalPct">—</span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
+          <div class="ptrack" aria-hidden="true"><div class="pgreen"></div><div class="pfill" id="pedalFill"></div></div>
+          <div class="pscale" aria-hidden="true"><span style="left:15%">15</span><span style="left:40%">40%</span></div>
+          <div class="mini">
+            <div class="tile"><div class="label">Pedal in range</div><div class="v" id="cScore">—</div></div>
+            <div class="tile"><div class="label">Slowdown capture</div><div class="v" id="cCap">—</div><div class="sub" id="cCapSub">slowdowns from 15+ mph</div></div>
+            <div class="tile"><div class="label">Heavy pedal</div><div class="v" id="cHard">0</div></div>
+            <div class="tile"><div class="label">Braking, little regen</div><div class="v" id="cBrake">0</div></div>
+          </div>
+        </section>
+        <section class="card" aria-label="Wh/mi of each recent mile">
+          <div class="chead"><span class="eyebrow">Mile by mile</span><span class="sub" id="mileNow"></span></div>
+          <div class="mbars" id="mileBars"></div>
+          <div class="mfoot"><span>Dashed line = target</span><span>Road grade<span class="v" id="cGrade">—</span></span></div>
+        </section>
       </div>
     </div>
-    <div class="clustermain">
-    <div class="kpis">
-      <div class="kpi score"><div class="label">Efficiency score</div><div class="v" id="effScore">—</div><div class="sub" id="effScoreSub">this trip</div></div>
-      <div class="kpi"><div class="label">Range at this pace</div><div class="v" id="proj">—</div><div class="sub" id="projSub">—</div></div>
-      <div class="kpi"><div class="label" id="avgLabel">Avg · last 15 mi</div><div class="v" id="avg">—</div><div class="sub" id="avgSub">builds as you drive</div></div>
-      <div class="kpi"><div class="label">Power</div><div class="v" id="pw">—</div><div class="sub" id="pwSub">waiting for pack data</div></div>
-    </div>
-    <div class="miles" aria-label="Wh/mi of each recent mile">
-      <div class="mhead"><span class="label">Mile by mile · dashed line = target</span><span class="note" id="mileNow" style="margin:0"></span></div>
-      <div class="mbars" id="mileBars"></div>
-    </div>
-    <div class="flow" aria-label="Power flow: regen to the left, power used to the right">
-      <div class="frow"><span class="fside regen">◀ Regen</span><span class="fstate" id="flowState">—</span><span class="fside use">Using ▶</span></div>
-      <div class="ftrack" id="fTrack">
-        <div class="fzone fzr" id="fZoneR" hidden></div><div class="fzone fzu" id="fZoneU" hidden></div>
-        <div class="ffill fr" id="fRegen"></div><div class="ffill fu" id="fUse"></div>
-        <div class="fzero"></div>
-      </div>
-      <div class="fticks" id="fTicks"></div>
-    </div>
-    <div class="pedal">
-      <div class="prow"><span class="label">Accelerator</span><span class="num" id="pedalPct">—</span><span class="zone" id="pedalZone"></span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
-      <div class="ptrack" aria-hidden="true"><div class="pgreen"></div><div class="pfill" id="pedalFill"></div></div>
-      <div class="pscale" aria-hidden="true"><span style="left:15%">15</span><span style="left:40%">40%</span></div>
-    </div>
+
     <div class="guide" aria-label="Max-range guide">
       <div class="gchip" id="gRange"><span class="glabel">Range vs rated</span><span class="gval" id="gRangeV">—</span></div>
       <div class="gchip" id="gSpeed"><span class="glabel">Best speed</span><span class="gval" id="gSpeedV">—</span></div>
       <div class="gchip" id="gClim"><span class="glabel" id="gClimL">Climate</span><span class="gval" id="gClimV">—</span></div>
-      <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel" id="gGoalL">Range goal</span><span class="gval" id="gGoalV">Set a goal</span></button>
+      <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel"><svg class="ic" aria-hidden="true" style="width:13px;height:13px"><use href="#i-flag"/></svg><span id="gGoalL">Range goal</span></span><span class="gval" id="gGoalV">Set a goal</span></button>
     </div>
     <form class="goalform" id="goalForm" novalidate hidden>
       <label for="goalMi">How many miles do you need to make? Tap one, or type your own.</label>
@@ -316,73 +457,19 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <button class="btn" id="goalClear" type="button">Clear goal</button>
       <p class="note" id="goalMsg" style="width:100%;margin:0"></p>
     </form>
-    <p class="tip" id="tip" data-tone="idle">Connect the car to start coaching.</p>
-    <p class="tip2" id="tip2"></p>
-    <p class="sr" id="tipSay" aria-live="polite"></p>
-    </div>
   </section>
 
-  <div class="grid">
-    <section class="panel" aria-label="Consumption chart">
-      <div class="chead">
-        <span class="label">Consumption by distance</span>
-        <div class="seg" role="group" aria-label="Chart window">
-          <button type="button" data-w="5">5 mi</button><button type="button" data-w="15">15 mi</button><button type="button" data-w="30">30 mi</button>
+  <!-- ============ Trip ============ -->
+  <section class="view" id="view-trip" role="tabpanel" aria-labelledby="tab-trip" hidden>
+    <div class="g12">
+      <section class="card c6" aria-label="Trip">
+        <div class="ttl">
+          <div><h2>This trip</h2><p id="tSince"></p></div>
+          <div class="btnrow"><button class="btn sm" id="endDrive" type="button" hidden>End drive</button><button class="btn sm danger" id="resetTrip" type="button">Reset trip</button></div>
         </div>
-      </div>
-      <div id="chart"></div>
-      <div class="legend"><span><b></b>Rolling 1-mile average (Wh/mi)</span><span><b class="r"></b>Rated consumption</span></div>
-    </section>
-
-    <div class="rail">
-      <section class="panel" aria-label="Drives">
-        <h2>Drives <button class="btn" id="endDrive" type="button" hidden style="font-size:12.5px;padding:5px 10px">End drive</button></h2>
-        <div id="driveTrend"></div>
-        <div id="driveList" class="dlist"></div>
-      </section>
-
-      <section class="panel" aria-label="Coach">
-        <h2>Coach <span>this trip</span></h2>
-        <div class="kv" style="grid-template-columns:1fr 1fr">
-          <div><div class="label">Pedal in range</div><div class="v" id="cScore">—</div></div>
-          <div><div class="label">Road grade</div><div class="v" id="cGrade">—</div></div>
-          <div><div class="label">Heavy pedal</div><div class="v" id="cHard">0</div></div>
-          <div><div class="label">Braking, little regen</div><div class="v" id="cBrake">0</div></div>
-          <div style="grid-column:1/-1"><div class="label">Slowdown capture (regen ÷ momentum lost)</div><div class="v" id="cCap">—</div><div class="sub" id="cCapSub" style="font-size:12px;color:var(--muted)">slowdowns from 15+ mph</div></div>
-        </div>
-        <button class="btn toggle" id="cruiseBtn" type="button" aria-pressed="false">Cruise / Autopilot on</button>
-        <div class="label" style="margin-top:16px">Your speed vs Wh/mi <span id="tempBand" style="text-transform:none;letter-spacing:0"></span></div>
-        <div id="speedTable" class="stable"></div>
-        <p class="note">Learned from your steady cruising, split by outside temperature, and kept on this phone. The amber point/row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
-      </section>
-
-      <section class="panel" aria-label="Battery">
-        <h2>Battery</h2>
-        <div class="battery"><div class="fill" id="battFill" style="width:0"></div><div class="pct" id="battPct">—</div></div>
-        <div class="kv">
-          <div><div class="label">Remaining</div><div class="v" id="eRem">—</div></div>
-          <div><div class="label">Full pack</div><div class="v" id="eFull">—</div></div>
-          <div><div class="label">Buffer</div><div class="v" id="eBuf">—</div></div>
-          <div><div class="label">Pack volts</div><div class="v" id="pv">—</div></div>
-          <div><div class="label">Current</div><div class="v" id="pa">—</div></div>
-          <div><div class="label">Pack temp</div><div class="v" id="pt">—</div></div>
-        </div>
-      </section>
-
-      <section class="panel" aria-label="Charge plan">
-        <h2>Charge plan <span>at your real Wh/mi</span></h2>
-        <div class="cfgrow2">
-          <label for="planMi">Miles before next charge<input id="planMi" type="text" inputmode="numeric" autocomplete="off"></label>
-          <label for="planRes">Arrive with at least<select id="planRes"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="30">30%</option></select></label>
-        </div>
-        <div class="rows" id="planRows" style="margin-top:12px"></div>
-      </section>
-
-      <section class="panel" aria-label="Trip">
-        <h2>Trip <span id="tSince"></span></h2>
-        <div class="kv" style="grid-template-columns:1fr 1fr">
-          <div><div class="label">Distance</div><div class="v" id="tMi">—</div></div>
-          <div><div class="label">Avg (driving)</div><div class="v" id="tAvg">—</div></div>
+        <div class="tiles">
+          <div class="tile"><div class="label">Distance</div><div class="v" id="tMi">—</div></div>
+          <div class="tile"><div class="label">Avg while driving</div><div class="v" id="tAvg">—</div></div>
         </div>
         <div class="split" id="split"><i class="d"></i><i class="p"></i></div>
         <div class="rows">
@@ -391,70 +478,139 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
           <div><span><i class="dot" style="background:var(--regen)"></i>Recovered by regen</span><span id="tRegen">—</span></div>
           <div><span>Added by charging</span><span id="tChg">—</span></div>
         </div>
-        <div class="label" style="margin-top:16px">Where the energy went</div>
-        <div class="split" id="ebBar" style="height:14px"></div>
-        <div class="rows" id="ebRows"></div>
-        <p class="note">Speeding up = power above what holding that speed costs while accelerating. Climate = heat-pump compressor.</p>
-        <p class="note"><button class="linkbtn" id="resetTrip" type="button">Reset trip</button></p>
-      </section>
-
-      <section class="panel" aria-label="Brick voltages">
-        <h2>Bricks <span id="bCount">0/108 reported</span></h2>
-        <div class="kv">
-          <div><div class="label">Lowest</div><div class="v" id="bMin">—</div></div>
-          <div><div class="label">Highest</div><div class="v" id="bMax">—</div></div>
-          <div><div class="label">Spread</div><div class="v" id="bSpread">—</div></div>
-          <div><div class="label" id="bWatchLbl">Brick 38</div><div class="v" id="bWatch">—</div></div>
-          <div><div class="label">Gap</div><div class="v" id="bGap">—</div></div>
+        <div class="sect">
+          <div class="label">Where the energy went</div>
+          <div class="split" id="ebBar" style="height:14px"></div>
+          <div class="rows" id="ebRows"></div>
+          <p class="note">Speeding up = power above what holding that speed costs while accelerating. Climate = heat-pump compressor.</p>
         </div>
-        <canvas id="bricks" aria-label="Voltage of all 108 bricks, watched brick highlighted"></canvas>
       </section>
-    </div>
-  </div>
 
-  <section class="panel tools">
-    <details>
-      <summary>Settings</summary>
-      <div class="cfg">
-        <label for="cfgBrick">Watch brick #<input id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
-        <label for="cfgBase">Brick numbering<select id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
-        <label for="cfgTok">Tessie API token<input id="cfgTok" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token" style="background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:15px var(--f-body);width:100%"></label>
-        <label for="cfgVin" id="cfgVinRow" hidden>Tessie car<select id="cfgVin"></select></label>
-        <label class="check" for="cfgAuto"><input id="cfgAuto" type="checkbox"> Auto-connect to the adapter when it's in range</label>
-        <label class="check" for="cfgAwake"><input id="cfgAwake" type="checkbox"> Keep screen on while connected</label>
-        <label for="cfgAlerts">Eyes-free alerts<select id="cfgAlerts"><option value="off">Off</option><option value="vibrate">Vibrate</option><option value="sound">Sound</option><option value="both">Vibrate + sound</option></select></label>
-        <div style="display:flex;align-items:end"><button class="btn" id="alertTest" type="button">Test alert</button></div>
-      </div>
-      <p class="note">The Tessie token is stored on this device only. <button class="linkbtn" id="cfgTokClear" type="button">Remove token</button></p>
-      <p class="note">Drives, the speed table and trips are kept on this phone only. <button class="linkbtn" id="exportBtn" type="button">Export backup</button> · <button class="linkbtn" id="importBtn" type="button">Import backup</button><input id="importFile" type="file" accept=".json,application/json" hidden></p>
-    </details>
-    <div class="btns">
-      <button class="btn" id="recBtn" type="button">Record CSV</button>
-      <button class="btn" id="dlBtn" type="button" hidden>Download CSV</button>
+      <section class="card c6" aria-label="Consumption chart">
+        <div class="ttl">
+          <div><h2>Consumption by distance</h2><p>Rolling average against rated</p></div>
+          <div class="seg" role="group" aria-label="Chart window">
+            <button type="button" data-w="5">5 mi</button><button type="button" data-w="15">15 mi</button><button type="button" data-w="30">30 mi</button>
+          </div>
+        </div>
+        <div id="chart"></div>
+        <div class="legend"><span><b></b>Rolling 1-mile average (Wh/mi)</span><span><b class="r"></b>Rated consumption</span></div>
+      </section>
+
+      <section class="card c6" aria-label="Drives">
+        <div class="ttl"><div><h2>Drives</h2><p>Scored when you park, kept on this phone</p></div></div>
+        <div id="driveTrend"></div>
+        <div id="driveList" class="dlist"></div>
+      </section>
+
+      <section class="card c6" aria-label="Speed vs consumption">
+        <div class="ttl"><div><h2>Your speed vs Wh/mi</h2><p id="tempBand"></p></div></div>
+        <div id="speedTable"></div>
+        <p class="note">Learned from your steady cruising, split by outside temperature. The amber point and row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
+      </section>
     </div>
   </section>
 
-  <section class="panel" id="diagPanel">
-    <details id="diag">
-      <summary>Diagnostics · what the adapter is sending</summary>
-      <p class="note">If readings are missing, connect the car, wait 20 seconds, then tap Copy diagnostics and include the text when you report the problem.</p>
-      <div class="btns" style="margin:10px 0"><button class="btn primary" id="diagCopy" type="button">Copy diagnostics</button></div>
-      <pre id="diagText" class="diagtext"></pre>
-    </details>
+  <!-- ============ Battery ============ -->
+  <section class="view" id="view-battery" role="tabpanel" aria-labelledby="tab-battery" hidden>
+    <div class="g12">
+      <section class="card c5" aria-label="Battery">
+        <div class="ttl"><div><h2>Battery</h2><p>Energy and pack readings from the car</p></div></div>
+        <div class="battery"><div class="fill" id="battFill" style="width:0"></div><div class="pct" id="battPct">—</div></div>
+        <div class="tiles">
+          <div class="tile"><div class="label">Remaining</div><div class="v" id="eRem">—</div></div>
+          <div class="tile"><div class="label">Full pack</div><div class="v" id="eFull">—</div></div>
+          <div class="tile"><div class="label">Buffer</div><div class="v" id="eBuf">—</div></div>
+          <div class="tile"><div class="label">Pack volts</div><div class="v" id="pv">—</div></div>
+          <div class="tile"><div class="label">Current</div><div class="v" id="pa">—</div></div>
+          <div class="tile"><div class="label">Pack temp</div><div class="v" id="pt">—</div></div>
+        </div>
+      </section>
+
+      <section class="card c7" aria-label="Charge plan">
+        <div class="ttl"><div><h2>Charge plan</h2><p>At your real Wh/mi, not rated</p></div></div>
+        <div class="cfg">
+          <label for="planMi">Miles before next charge<input class="field" id="planMi" type="text" inputmode="numeric" autocomplete="off"></label>
+          <label for="planRes">Arrive with at least<select class="field" id="planRes"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="30">30%</option></select></label>
+        </div>
+        <div class="rows" id="planRows" style="margin-top:14px"></div>
+      </section>
+
+      <section class="card c12" aria-label="Brick voltages">
+        <div class="ttl"><div><h2>Bricks</h2><p id="bCount">0/108 reported</p></div></div>
+        <div class="tiles">
+          <div class="tile"><div class="label" id="bMinLbl">Lowest</div><div class="v" id="bMin">—</div></div>
+          <div class="tile"><div class="label" id="bMaxLbl">Highest</div><div class="v" id="bMax">—</div></div>
+          <div class="tile"><div class="label">Spread</div><div class="v" id="bSpread">—</div></div>
+          <div class="tile watch"><div class="label" id="bWatchLbl">Brick 38</div><div class="v" id="bWatch">—</div></div>
+          <div class="tile"><div class="label">Gap</div><div class="v" id="bGap">—</div></div>
+        </div>
+        <div class="bgrid" id="bricks" role="img" aria-label="Voltage of all 108 bricks, watched brick outlined"></div>
+        <p class="note">Brighter = higher voltage within today's spread. Amber is 5+ mV and red 20+ mV under the pack's middle brick. The outlined brick is the one you watch (Setup).</p>
+      </section>
+    </div>
+  </section>
+
+  <!-- ============ Setup ============ -->
+  <section class="view" id="view-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
+    <div class="g12">
+      <section class="card c6" aria-label="Adapter and screen">
+        <div class="ttl"><div><h2>Adapter &amp; screen</h2><p>The adapter only listens; nothing is sent to the car.</p></div></div>
+        <div class="cfg">
+          <label class="check" for="cfgAuto"><input id="cfgAuto" type="checkbox"> Auto-connect to the adapter when it's in range</label>
+          <label class="check" for="cfgAwake"><input id="cfgAwake" type="checkbox"> Keep screen on while connected</label>
+          <label for="cfgAlerts">Eyes-free alerts<select class="field" id="cfgAlerts"><option value="off">Off</option><option value="vibrate">Vibrate</option><option value="sound">Sound</option><option value="both">Vibrate + sound</option></select></label>
+          <div style="display:flex;align-items:end"><button class="btn" id="alertTest" type="button">Test alert</button></div>
+          <label for="cfgBrick">Watch brick #<input class="field" id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
+          <label for="cfgBase">Brick numbering<select class="field" id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
+        </div>
+      </section>
+
+      <section class="card c6" aria-label="Tessie">
+        <div class="ttl"><div><h2>Tessie</h2><p>Live numbers from the cloud when the adapter isn't plugged in</p></div></div>
+        <div class="cfg">
+          <label class="wide" for="cfgTok">Tessie API token<input class="field" id="cfgTok" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token" style="font-family:var(--f-ui)"></label>
+          <label class="wide" for="cfgVin" id="cfgVinRow" hidden>Tessie car<select class="field" id="cfgVin"></select></label>
+        </div>
+        <p class="note">The token is stored on this device only. <button class="linkbtn" id="cfgTokClear" type="button">Remove token</button></p>
+      </section>
+
+      <section class="card c6" aria-label="Your data">
+        <div class="ttl"><div><h2>Your data</h2><p>Drives, the speed table and trips are kept on this phone only.</p></div></div>
+        <div class="btnrow">
+          <button class="btn" id="exportBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg>Export backup</button>
+          <button class="btn" id="importBtn" type="button">Import backup</button><input id="importFile" type="file" accept=".json,application/json" hidden>
+        </div>
+        <div class="btnrow" style="margin-top:14px">
+          <button class="btn" id="recBtn" type="button">Record CSV</button>
+          <button class="btn" id="dlBtn" type="button" hidden>Download CSV</button>
+        </div>
+        <p class="note">CSV records one row a second of the raw readings, for spreadsheets.</p>
+      </section>
+
+      <section class="card c6" id="diagPanel">
+        <details id="diag">
+          <summary>Diagnostics: what the adapter is sending</summary>
+          <p class="note">If readings are missing, connect the car, wait 20 seconds, then tap Copy diagnostics and include the text when you report the problem.</p>
+          <div class="btnrow" style="margin:10px 0"><button class="btn primary" id="diagCopy" type="button">Copy diagnostics</button></div>
+          <pre id="diagText" class="diagtext"></pre>
+        </details>
+      </section>
+    </div>
   </section>
 
   <div class="overlay" id="summary" hidden role="dialog" aria-modal="true" aria-label="Drive summary">
-    <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
+    <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v25</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
-</div>
-<script src="decode.js?v=25"></script>
-<script src="elm.js?v=25"></script>
-<script src="sim.js?v=25"></script>
-<script src="coach.js?v=25"></script>
-<script src="drives.js?v=25"></script>
-<script src="stops.js?v=25"></script>
-<script src="app.js?v=25"></script>
+  <footer><span id="ver">v26</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+</main>
+<script src="decode.js?v=26"></script>
+<script src="elm.js?v=26"></script>
+<script src="sim.js?v=26"></script>
+<script src="coach.js?v=26"></script>
+<script src="drives.js?v=26"></script>
+<script src="stops.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

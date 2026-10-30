@@ -34,7 +34,16 @@ To try it locally on a desktop first, run `npx serve .` in this folder. Desktop 
 
 On later visits, Chrome remembers the adapter, so **Connect car** skips the chooser.
 
-## Efficiency cluster (top of the screen)
+## Screen layout
+
+Four tabs: on a phone they sit at the bottom of the screen, on a wider screen across the top (with charge and pack temperature beside them). The last one you used is remembered.
+
+- **Cockpit:** coaching tip, efficiency gauge, power flow, accelerator, mile by mile and the max-range guide.
+- **Trip:** this trip and where its energy went, the consumption chart, drive history and your speed curve.
+- **Battery:** charge and pack readings, the charge plan, and a heatmap of all 108 bricks.
+- **Setup:** adapter and screen options, alerts, Tessie, backup, CSV recording and diagnostics.
+
+## Efficiency gauge (Cockpit)
 
 - **Efficiency gauge:** live Wh/mi, smoothed over a few seconds.
   - The arc is green up to your **target**, amber to 1.35× the target, and red beyond.
@@ -51,14 +60,14 @@ On later visits, Chrome remembers the adapter, so **Connect car** skips the choo
 - **Mile by mile:** each of the last 10 whole miles plus the current one, as bars colored against your target, with a dashed target line.
 - **Slowdown capture:** for every slowdown from 15+ mph that loses at least 10 mph with your foot mostly off the pedal, the share of the car's momentum (½·m·v², 1850 kg) that came back as regen.
   - Drag and rolling resistance take some of it, so **60%+ is excellent**.
-  - It's reported on the Coach card, in the second coaching line right after each slowdown, and in drive summaries.
+  - It's reported on the Accelerator card, in the second coaching line right after each slowdown, and in drive summaries.
 - **Climate / parked draw chip:** compressor kW, or standby draw while stopped, converted to **miles of range per hour** at your pace.
 - **Speed curve:** your learned Wh/mi by speed, with the sweet spot and your current speed marked, plus how far your current charge goes at each speed.
 - **Charge plan:** what % to charge to for the miles you need plus an arrival reserve, at your last-7-drives Wh/mi.
 - **Drive summaries and history:** a score, comparison with rated, slowdown capture, energy breakdown and the one habit to fix, with trends across drives.
 - Slower-changing panels redraw once a second to keep the phone cool in a mount.
 
-## Eyes-free alerts (Settings, off by default)
+## Eyes-free alerts (Setup tab, off by default)
 
 Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**, at most once per 15 s per kind, never while **Cruise / Autopilot on** is set, and only above 5 mph.
 
@@ -77,12 +86,12 @@ Everything below is driven by **your car's own steady-cruise data** (the coach's
 - **Power meter target bands (green):**
   - Up: efficient draw = the power that holding this speed costs you, plus a gentle-acceleration allowance (~0.06 g).
   - Down: gentle regen = up to 60% of the BMS regen limit (35 kW max).
-  - The bar turns teal inside the band, amber above it, and red past about 1.8× the band. Regen past the gentle band turns amber.
+  - The bar turns cyan inside the band, amber above it, and red past about 1.8× the band. Regen past the gentle band turns amber.
 - **Right now (Wh/mi)** turns green within 10% of the target for this speed, amber up to 40% over, and red beyond.
 - **Range vs rated:** projected range at your pace minus the car's rated range. Positive means you're beating the car's estimate.
 - **Best speed:** your most efficient 5-mph band, plus how many miles slowing to it would add right now.
 - **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart.
-- **Drive view** (header button): hides everything except the meter, numbers, guide chips and coaching tip, all enlarged for a quick glance, and keeps the screen on.
+- **Drive view** (header button): shows only the Cockpit, without the pedal stat tiles, all enlarged for a quick glance, and keeps the screen on.
 
 ## Range coach (needs the adapter)
 
@@ -109,11 +118,11 @@ Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjusti
 
 Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter. Your car streams Fleet Telemetry to Tessie, so pack volts/amps, power and energy remaining refresh about every **10 s** while the car is awake.
 
-- Paste your Tessie API token under **Settings → Tessie API token**. It's stored in that phone's browser only, so never put it in the repo; GitHub Pages repos are public.
+- Paste your Tessie API token under **Setup → Tessie API token**. It's stored in that phone's browser only, so never put it in the repo; GitHub Pages repos are public.
 - Tessie mode never wakes the car (`use_cache=true`). When the car sleeps, the chip shows how old the last reading is.
 - Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter.
 - Tessie mode keeps its own trip, separate from the adapter's.
-- More than one car on the Tessie account: pick it under **Settings → Tessie car** (remembered).
+- More than one car on the Tessie account: pick it under **Setup → Tessie car** (remembered).
 
 ## Auto-connect (v21)
 
@@ -126,7 +135,7 @@ After you pick the adapter once, Chrome remembers the permission. While the page
 
 The chip shows **Looking for the adapter…** until the car powers the OBD port.
 
-- **Disconnect** pauses auto-connect until you tap **Connect car** again. You can turn it off under Settings.
+- **Disconnect** pauses auto-connect until you tap **Connect car** again. You can turn it off under Setup.
 - If the Bluetooth link drops mid-drive, it reconnects quietly the same way, keeping the trip.
 - Picking an adapter with **Choose adapter** makes Chrome forget the other adapters it had permission for, so auto-connect can't open the wrong one (Web Serial can't tell two Bluetooth serial adapters apart). Choose adapter still lists them all.
 - **Limit:** Chrome can't connect while the page is closed or in the background. Web pages can't run Bluetooth in the background, so open the app (or keep it as the home-screen app) when you get in.
@@ -157,7 +166,7 @@ How each number is worked out:
 - **Avg · last N mi:** energy over distance from the lifetime counters, across the last 5, 15 or 30 miles of the trip.
 - **Projected range:** (remaining − buffer) ÷ the average above. If there's no driving data yet, it falls back to rated range.
 - **Trip** splits energy into driving, parked (odometer not moving), regen recovered and charging added. It saves to the phone and survives reconnects until you tap **Reset trip** (twice, to confirm).
-- **Bricks:** lowest, highest, spread, a watched brick (default **38**) and its gap to the lowest of the other 107. The gap turns amber below −5 mV and red below −20 mV.
+- **Bricks:** lowest, highest, spread, a watched brick (default **38**) and its gap to the lowest of the other 107. The gap turns amber below −5 mV and red below −20 mV. The heatmap shades each brick by voltage within the current spread and marks bricks 5+ mV (amber) or 20+ mV (red) under the middle brick.
 
 ## Record CSV
 
@@ -167,11 +176,11 @@ Rows are also saved on the phone as you go, so if the page reloads or Android cl
 
 ## Backup
 
-Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Settings → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. The Tessie token is never included.
+Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Setup → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. The Tessie token is never included.
 
 ## Verify on your car (first drive checklist)
 
-- [ ] **Brick numbering:** compare the watched brick with Scan My Tesla once. If it's off by one, switch **Settings → Brick numbering** to 0–107.
+- [ ] **Brick numbering:** compare the watched brick with Scan My Tesla once. If it's off by one, switch **Setup → Brick numbering** to 0–107.
 - [ ] **Full pack kWh** should land near what SMT shows for Nominal Full Pack.
 - [ ] **Trip distance** should match the car's trip meter within about 0.1 mi over 10 mi.
 - [ ] **Power** while parked with climate off should read roughly **0.2–0.5 kW**.
@@ -190,7 +199,7 @@ Drives, the learned speed table and trips are stored in Chrome on this phone onl
 
 ## Files
 
-- `index.html`: layout and styles
+- `index.html`: layout and styles, with the icons inlined (Lucide, ISC license) so it works offline
 - `app.js`: connection, trip math, rendering, CSV
 - `elm.js`: adapter link over Web Serial: STN pass filters, or ELM327/vLinker round-robin (`ATCRA` groups, `ATCF`/`ATCM` fallback)
 - `decode.js`: CAN signal decoders (usable in Node)
