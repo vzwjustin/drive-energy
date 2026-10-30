@@ -63,8 +63,8 @@ h1{font:700 16px/1.2 var(--f-ui);letter-spacing:-.01em;margin:0}
 .btn.primary{background:var(--regen);border-color:var(--regen);color:#04130c}
 .btn.danger{background:color-mix(in srgb,var(--bad) 10%,transparent);border-color:color-mix(in srgb,var(--bad) 28%,transparent);color:var(--bad)}
 .btn.sm{padding:6px 11px;font-size:12.5px}
-#demoBtn .ic{color:var(--regen)} #tessieBtn .ic{color:var(--info)}
-@media (max-width:767px){#connectBtn,#disconnectBtn{order:-1}}       /* the main action stays in view when the row scrolls */
+#demoBtn .ic{color:var(--regen)}
+@media (max-width:767px){#connectBtn,#disconnectBtn{order:-1} .actions .btn{padding-inline:10px}}       /* the main action stays in view when the row scrolls */
 #driveBtn[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#04130c}
 
 /* page + tabs */
@@ -346,9 +346,7 @@ body.drive .overlay .sheet{font-size:16px}
     </div>
     <div class="actions">
       <button class="btn" id="demoBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span id="demoLbl">Demo</span></button>
-      <button class="btn" id="tessieBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-cloud"/></svg><span id="tessieLbl">Tessie</span></button>
       <button class="btn" id="driveBtn" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-car"/></svg>Drive view</button>
-      <button class="btn" id="chooseBtn" type="button" title="Pick a different Bluetooth adapter"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button>
       <button class="btn" id="disconnectBtn" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-unplug"/></svg>Disconnect</button>
       <button class="btn primary" id="connectBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth"/></svg>Connect car</button>
     </div>
@@ -377,7 +375,7 @@ body.drive .overlay .sheet{font-size:16px}
         <p class="tip2" id="tip2"></p>
         <p class="sr" id="tipSay" aria-live="polite"></p>
       </div>
-      <button class="toggle" id="cruiseBtn" type="button" aria-pressed="false">Cruise / Autopilot on</button>
+      <button class="toggle" id="cruiseBtn" type="button" aria-pressed="false" hidden>Cruise / Autopilot</button>
     </section>
 
     <div class="g12">
@@ -564,6 +562,8 @@ body.drive .overlay .sheet{font-size:16px}
           <label for="cfgBrick">Watch brick #<input class="field" id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
           <label for="cfgBase">Brick numbering<select class="field" id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
         </div>
+        <div class="btnrow" style="margin-top:14px"><button class="btn" id="chooseBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button></div>
+        <p class="note">Picks a different Bluetooth adapter. Chrome then forgets the others, so auto-connect can't open the wrong one.</p>
       </section>
 
       <section class="card c6" aria-label="Tessie">
@@ -572,6 +572,7 @@ body.drive .overlay .sheet{font-size:16px}
           <label class="wide" for="cfgTok">Tessie API token<input class="field" id="cfgTok" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token" style="font-family:var(--f-ui)"></label>
           <label class="wide" for="cfgVin" id="cfgVinRow" hidden>Tessie car<select class="field" id="cfgVin"></select></label>
         </div>
+        <div class="btnrow" style="margin-top:14px"><button class="btn" id="tessieBtn" type="button"><svg class="ic" aria-hidden="true" style="color:var(--info)"><use href="#i-cloud"/></svg><span id="tessieLbl">Start Tessie</span></button></div>
         <p class="note">The token is stored on this device only. <button class="linkbtn" id="cfgTokClear" type="button">Remove token</button></p>
       </section>
 
@@ -603,14 +604,14 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v26</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v27</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=26"></script>
-<script src="elm.js?v=26"></script>
-<script src="sim.js?v=26"></script>
-<script src="coach.js?v=26"></script>
-<script src="drives.js?v=26"></script>
-<script src="stops.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="decode.js?v=27"></script>
+<script src="elm.js?v=27"></script>
+<script src="sim.js?v=27"></script>
+<script src="coach.js?v=27"></script>
+<script src="drives.js?v=27"></script>
+<script src="stops.js?v=27"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

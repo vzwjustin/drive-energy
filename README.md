@@ -69,7 +69,7 @@ Four tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 
 ## Eyes-free alerts (Setup tab, off by default)
 
-Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**, at most once per 15 s per kind, never while **Cruise / Autopilot on** is set, and only above 5 mph.
+Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**, at most once per 15 s per kind, never while the **Cruise / Autopilot** switch is on, and only above 5 mph.
 
 | Signal | Meaning |
 |---|---|
@@ -110,13 +110,13 @@ Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjusti
   - Uphill/downhill, cold or hot air, climate draw over 3 kW, cruise on, above ~70 mph
 - **Drive Energy addition:** "5 mph slower saves X%", based on your own speed table.
 - **Speed vs Wh/mi** is learned from steady cruising and split by outside temperature (<40, 40–59, 60–79, 80+ °F).
-- **Cruise / Autopilot on** toggle: the cruise signal isn't on the vehicle bus, so tap it while cruise is holding speed. That turns off pedal coaching and adds the cruise tip.
+- **Cruise / Autopilot** switch (next to the coaching tip, shown once pedal data is live): the cruise signal isn't on the vehicle bus, so tap it while cruise is holding speed. That turns off pedal coaching and adds the cruise tip.
 - Not covered here: EcoLab's wind estimate, tire-pressure, and speed-limit cues. Those frames usually aren't on the OBD vehicle bus.
 - **Not validated on a car**, same as EcoLab: the 15–40% zone is a starting estimate.
 
 ## Away from the car: Tessie mode
 
-Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter. Your car streams Fleet Telemetry to Tessie, so pack volts/amps, power and energy remaining refresh about every **10 s** while the car is awake.
+Tap **Start Tessie** (Setup tab) to run the same screen from Tessie's cloud instead of the adapter. Your car streams Fleet Telemetry to Tessie, so pack volts/amps, power and energy remaining refresh about every **10 s** while the car is awake.
 
 - Paste your Tessie API token under **Setup → Tessie API token**. It's stored in that phone's browser only, so never put it in the repo; GitHub Pages repos are public.
 - Tessie mode never wakes the car (`use_cache=true`). When the car sleeps, the chip shows how old the last reading is.
@@ -137,7 +137,7 @@ The chip shows **Looking for the adapter…** until the car powers the OBD port.
 
 - **Disconnect** pauses auto-connect until you tap **Connect car** again. You can turn it off under Setup.
 - If the Bluetooth link drops mid-drive, it reconnects quietly the same way, keeping the trip.
-- Picking an adapter with **Choose adapter** makes Chrome forget the other adapters it had permission for, so auto-connect can't open the wrong one (Web Serial can't tell two Bluetooth serial adapters apart). Choose adapter still lists them all.
+- Picking an adapter with **Choose adapter** (Setup tab) makes Chrome forget the other adapters it had permission for, so auto-connect can't open the wrong one (Web Serial can't tell two Bluetooth serial adapters apart). Choose adapter still lists them all.
 - **Limit:** Chrome can't connect while the page is closed or in the background. Web pages can't run Bluetooth in the background, so open the app (or keep it as the home-screen app) when you get in.
 - Close Scan My Tesla and other OBD apps first: the adapter allows one connection at a time.
 

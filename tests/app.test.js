@@ -255,6 +255,22 @@ const test = async (name, fn) => {
     app.stop();
   });
 
+  await test("header: Disconnect shows while Tessie runs (not for Demo); the cruise switch waits for live pedal data", async () => {
+    const tes = fakeTessie();
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    assert.strictEqual(app.el("disconnectBtn").hidden, true); assert.strictEqual(app.el("cruiseBtn").hidden, true);
+    app.click("tessieBtn"); await wait(300);
+    assert.strictEqual(app.el("disconnectBtn").hidden, false, "Disconnect stops Tessie from the header");
+    assert.strictEqual(app.el("cruiseBtn").hidden, true, "no pedal data from Tessie");
+    assert.strictEqual(app.text("tessieLbl"), "Stop Tessie");
+    app.click("disconnectBtn"); await wait(100);
+    assert.strictEqual(app.el("disconnectBtn").hidden, true); assert.strictEqual(app.text("tessieLbl"), "Start Tessie");
+    app.click("demoBtn"); await wait(800);
+    assert.strictEqual(app.el("cruiseBtn").hidden, false, "live pedal data in Demo");
+    assert.strictEqual(app.el("disconnectBtn").hidden, true, "Demo stops from its own button");
+    app.stop();
+  });
+
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);
   process.exit(fail ? 1 : 0);                             // exit explicitly: the fake adapters' streams are still ticking
 })().catch(e => { console.error(e); process.exit(1); });

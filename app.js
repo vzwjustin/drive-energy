@@ -37,9 +37,9 @@
     $("connectBtn").hidden = app.source === "car";
     $("chooseBtn").hidden = app.source === "car";
     document.body.classList.toggle("offline", app.source !== "car");
-    $("disconnectBtn").hidden = app.source !== "car";
+    $("disconnectBtn").hidden = app.source !== "car" && app.source !== "tessie";
     $("demoLbl").textContent = app.source === "demo" ? "Stop demo" : "Demo";
-    $("tessieLbl").textContent = app.source === "tessie" ? "Stop Tessie" : "Tessie";
+    $("tessieLbl").textContent = app.source === "tessie" ? "Stop Tessie" : "Start Tessie";
   }
   function notice(text, tone) {
     const n = $("notice"); n.hidden = !text; n.dataset.tone = tone || "warn"; $("noticeText").textContent = text || "";
@@ -79,7 +79,7 @@
       if (choose || !known.length) {
         notice("Chrome will ask to connect to a \"serial port\": that's your Bluetooth OBD adapter. Pick its name (for example OBDLink MX+ or vLinker) and tap Connect.", "info");
         try { picked = await navigator.serial.requestPort(); }
-        catch (e) { notice(e && e.name === "NotFoundError" ? "No adapter picked. If the list was empty: 1) pair the adapter in Android Settings → Bluetooth (PIN usually 1234), 2) allow Chrome's Nearby devices permission (Android Settings → Apps → Chrome → Permissions), 3) close Scan My Tesla or other OBD apps, then tap Choose adapter again." : (e.message || String(e)), "bad"); return; }
+        catch (e) { notice(e && e.name === "NotFoundError" ? "No adapter picked. If the list was empty: 1) pair the adapter in Android Settings → Bluetooth (PIN usually 1234), 2) allow Chrome's Nearby devices permission (Android Settings → Apps → Chrome → Permissions), 3) close Scan My Tesla or other OBD apps, then tap Choose adapter in Setup." : (e.message || String(e)), "bad"); return; }
       }
       // A background attempt may still be holding the port; wait for it (up to 12 s) instead of ignoring the tap.
       if (app.connecting) { app.abortAuto = true; status("connecting", "Finishing the last attempt…"); for (let i = 0; i < 48 && app.connecting; i++) await new Promise(r => setTimeout(r, 250)); }
@@ -124,7 +124,7 @@
         // Adapter not powered/in range yet (car off, phone just got in): keep the remembered port and try again soon.
         status("off", app.port || (e && !e.quiet) ? "Looking for the adapter…" : "Not connected");
       } else {
-        const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the adapter in Android Bluetooth settings first, then tap Connect car." : `${e.message || String(e)} If that's the wrong adapter, tap Choose adapter.`;
+        const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the adapter in Android Bluetooth settings first, then tap Connect car." : `${e.message || String(e)} If that's the wrong adapter, tap Choose adapter in Setup.`;
         notice(msg, "bad");
         if (e && e.name !== "NotFoundError") app.port = null;
         status("off", "Not connected");
@@ -353,6 +353,7 @@
     $("cHard").textContent = String(st.heavyEvents); $("cBrake").textContent = String(st.frictionEvents);
     set("cGrade", L.gradePct == null ? "—" : `${L.gradePct > 0 ? "+" : ""}${L.gradePct}`, L.gradePct == null ? "" : "%");
     $("cruiseBtn").setAttribute("aria-pressed", String(st.cruiseOn));
+    $("cruiseBtn").hidden = !live || !app.source || app.source === "tessie";   // only means something with live pedal data
     const avgCap = stops.avg(), ls = stops.state.last;
     set("cCap", avgCap == null ? "—" : String(avgCap), avgCap == null ? "" : "%");
     $("cCap").dataset.tone = avgCap == null ? "" : Stops.grade(avgCap);
