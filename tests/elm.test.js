@@ -86,5 +86,17 @@ async function run(name, opts, check) {
     assert.ok(err && /ATCSM1/.test(err.message));
     assert.ok(!port.sent.includes("ATMA"));
   });
+  {
+    // The app gives up on a Bluetooth open after 10 s and closes the link; an open that lands later must not keep the port.
+    let isOpen = false;
+    const port = { open: () => new Promise(r => setTimeout(() => { isOpen = true; r(); }, 100)), async close() { isOpen = false; },
+      readable: new ReadableStream(), writable: new WritableStream() };
+    const link = new ElmLink({});
+    const opening = link.open(port).then(() => null, e => e);
+    await link.close();
+    assert.ok(await opening, "a late open is refused");
+    assert.strictEqual(isOpen, false, "port closed again");
+    console.log("ok - a Bluetooth open that finishes after close() releases the port");
+  }
   console.log("\nall elm tests passed");
 })();
