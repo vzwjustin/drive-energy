@@ -34,6 +34,7 @@ button,select,input{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--energy);outline-offset:2px}
 [hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .who{display:flex;align-items:center;gap:12px}
@@ -315,8 +316,9 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <button class="btn" id="goalClear" type="button">Clear goal</button>
       <p class="note" id="goalMsg" style="width:100%;margin:0"></p>
     </form>
-    <p class="tip" id="tip" data-tone="idle" aria-live="polite">Connect the car to start coaching.</p>
+    <p class="tip" id="tip" data-tone="idle">Connect the car to start coaching.</p>
     <p class="tip2" id="tip2"></p>
+    <p class="sr" id="tipSay" aria-live="polite"></p>
     </div>
   </section>
 
@@ -417,12 +419,14 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
         <label for="cfgBrick">Watch brick #<input id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
         <label for="cfgBase">Brick numbering<select id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
         <label for="cfgTok">Tessie API token<input id="cfgTok" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token" style="background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:15px var(--f-body);width:100%"></label>
+        <label for="cfgVin" id="cfgVinRow" hidden>Tessie car<select id="cfgVin"></select></label>
         <label class="check" for="cfgAuto"><input id="cfgAuto" type="checkbox"> Auto-connect to the adapter when it's in range</label>
         <label class="check" for="cfgAwake"><input id="cfgAwake" type="checkbox"> Keep screen on while connected</label>
         <label for="cfgAlerts">Eyes-free alerts<select id="cfgAlerts"><option value="off">Off</option><option value="vibrate">Vibrate</option><option value="sound">Sound</option><option value="both">Vibrate + sound</option></select></label>
         <div style="display:flex;align-items:end"><button class="btn" id="alertTest" type="button">Test alert</button></div>
       </div>
       <p class="note">The Tessie token is stored on this device only. <button class="linkbtn" id="cfgTokClear" type="button">Remove token</button></p>
+      <p class="note">Drives, the speed table and trips are kept on this phone only. <button class="linkbtn" id="exportBtn" type="button">Export backup</button> · <button class="linkbtn" id="importBtn" type="button">Import backup</button><input id="importFile" type="file" accept=".json,application/json" hidden></p>
     </details>
     <div class="btns">
       <button class="btn" id="recBtn" type="button">Record CSV</button>
@@ -443,14 +447,14 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v24</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v25</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=24"></script>
-<script src="elm.js?v=24"></script>
-<script src="sim.js?v=24"></script>
-<script src="coach.js?v=24"></script>
-<script src="drives.js?v=24"></script>
-<script src="stops.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="decode.js?v=25"></script>
+<script src="elm.js?v=25"></script>
+<script src="sim.js?v=25"></script>
+<script src="coach.js?v=25"></script>
+<script src="drives.js?v=25"></script>
+<script src="stops.js?v=25"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

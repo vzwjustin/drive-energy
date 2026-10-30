@@ -113,6 +113,7 @@ Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter
 - Tessie mode never wakes the car (`use_cache=true`). When the car sleeps, the chip shows how old the last reading is.
 - Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter.
 - Tessie mode keeps its own trip, separate from the adapter's.
+- More than one car on the Tessie account: pick it under **Settings → Tessie car** (remembered).
 
 ## Auto-connect (v21)
 
@@ -126,6 +127,8 @@ After you pick the adapter once, Chrome remembers the permission. While the page
 The chip shows **Looking for the adapter…** until the car powers the OBD port.
 
 - **Disconnect** pauses auto-connect until you tap **Connect car** again. You can turn it off under Settings.
+- If the Bluetooth link drops mid-drive, it reconnects quietly the same way, keeping the trip.
+- Picking an adapter with **Choose adapter** makes Chrome forget the other adapters it had permission for, so auto-connect can't open the wrong one (Web Serial can't tell two Bluetooth serial adapters apart). Choose adapter still lists them all.
 - **Limit:** Chrome can't connect while the page is closed or in the background. Web pages can't run Bluetooth in the background, so open the app (or keep it as the home-screen app) when you get in.
 - Close Scan My Tesla and other OBD apps first: the adapter allows one connection at a time.
 
@@ -153,12 +156,18 @@ How each number is worked out:
 - **Right now (Wh/mi):** smoothed power ÷ speed. It shows above 3 mph only.
 - **Avg · last N mi:** energy over distance from the lifetime counters, across the last 5, 15 or 30 miles of the trip.
 - **Projected range:** (remaining − buffer) ÷ the average above. If there's no driving data yet, it falls back to rated range.
-- **Trip** splits energy into driving, parked (odometer not moving), regen recovered and charging added. It saves to the phone and survives reconnects until you tap **Reset trip**.
+- **Trip** splits energy into driving, parked (odometer not moving), regen recovered and charging added. It saves to the phone and survives reconnects until you tap **Reset trip** (twice, to confirm).
 - **Bricks:** lowest, highest, spread, a watched brick (default **38**) and its gap to the lowest of the other 107. The gap turns amber below −5 mV and red below −20 mV.
 
 ## Record CSV
 
 Tap **Record CSV** to log one row per second: speed, power, V/A, odometer, kWh counters, SOC, energy remaining, full pack, min/max brick, watched brick, and pack temps. Tap again to stop, then tap **Download CSV**. Logging keeps the last 10 hours of rows.
+
+Rows are also saved on the phone as you go, so if the page reloads or Android closes the tab, the recording comes back as **Download CSV** the next time you open the app.
+
+## Backup
+
+Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Settings → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. The Tessie token is never included.
 
 ## Verify on your car (first drive checklist)
 
@@ -188,6 +197,7 @@ Tap **Record CSV** to log one row per second: speed, power, V/A, odometer, kWh c
 - `coach.js`: pedal/brake efficiency coach and speed-band learning
 - `sim.js`: demo frame generator (the **Demo** button)
 - `sw.js`, `manifest.webmanifest`, `icon.svg`: offline install
-- `tests/`: run with `for t in decode elm app sw; do node tests/$t.test.js || break; done` (`app.test.js` boots `app.js` on a stub page against a fake adapter and a fake Tessie)
+- `tests/`: run with `npm test` (`app.test.js` boots `app.js` on a stub page against a fake adapter and a fake Tessie). GitHub Actions runs them on every push.
+- `tools/bump.js`: `npm run bump` raises the version in `sw.js` and `index.html` for a release
 
 Signal layouts come from the community DBC at github.com/joshwardell/model3dbc (MIT) and the 2021+ `0x352` mux layout documented in the Battery-Emulator project. This is unofficial and not affiliated with Tesla.

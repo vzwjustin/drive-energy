@@ -1,0 +1,9 @@
+{
+  "name": "drive-energy",
+  "private": true,
+  "description": "Live Model 3 energy screen over an OBD adapter (Web Serial). No build step; these scripts are for development only.",
+  "scripts": {
+    "test": "node tests/decode.test.js && node tests/elm.test.js && node tests/app.test.js && node tests/sw.test.js",
+    "bump": "node tools/bump.js"
+  }
+}

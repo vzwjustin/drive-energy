@@ -137,6 +137,15 @@ t("drives: habit picks the biggest issue", () => {
   assert.strictEqual(Dr.habit({ friction: 0, heavy: 0, pedalPct: 85, vsRatedPct: -3 }).tone, "good");
 });
 
+t("drives: clean() rebuilds an imported drive from numbers only", () => {
+  const Dr = require("../drives.js");
+  const d = Dr.clean({ t0: 5, mi: 10, kwh: 2.3, wh: 230, rated: 220, pedalPct: 80, heavy: "<b>", habit: { tone: "x\" onclick=\"y", text: "<img src=x onerror=alert(1)>" }, id: "<i>", score: "<s>" });
+  assert.strictEqual(d.id, "5"); assert.strictEqual(d.heavy, 0); assert.strictEqual(d.score, Dr.score(230, 220, 80));
+  assert.deepStrictEqual(d.habit, Dr.habit(d)); assert.ok(!/[<>"]/.test(d.habit.text + d.habit.tone));
+  assert.strictEqual(Dr.clean({ t0: 5, mi: "10", kwh: 2, wh: 200 }), null);     // required numbers must be numbers
+  assert.strictEqual(Dr.clean({ t0: 5, mi: 0, kwh: 0, wh: 0 }), null);
+});
+
 t("stops: regen capture of a slowdown from 50 to 0 mph", () => {
   const S = require("../stops.js"), st = S.createStops();
   let out = null, mph = 50;

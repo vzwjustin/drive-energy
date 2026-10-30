@@ -27,6 +27,20 @@
     return { tone: "good", text: "Smooth drive. Small gains left: look further ahead and coast earlier." };
   }
 
+  // Rebuild a saved drive from its numbers only (an imported backup is untrusted): id, score and habit text are recomputed.
+  const REQ = ["t0", "mi", "kwh", "wh"], ZERO = ["t1", "heavy", "friction", "regenKWh", "parkKWh", "accelKWh", "cruiseKWh", "stops", "maxMph"],
+    OPT = ["rated", "vsRatedPct", "rangeDeltaMi", "pedalPct", "climateKWh", "capturePct", "avgMph", "cruiseBand", "sweetBand", "outsideC"];
+  function clean(x) {
+    const num = v => (typeof v === "number" && isFinite(v) ? v : null);
+    if (!x || typeof x !== "object" || REQ.some(k => num(x[k]) == null) || !(x.mi > 0)) return null;
+    const d = { demo: false };
+    for (const k of REQ) d[k] = x[k];
+    for (const k of ZERO) d[k] = num(x[k]) ?? 0;
+    for (const k of OPT) d[k] = num(x[k]);
+    d.id = String(d.t0); d.score = score(d.wh, d.rated, d.pedalPct); d.habit = habit(d);
+    return d;
+  }
+
   function createDrives({ load, save } = {}) {
     const s = { cur: null, stoppedFor: 0, history: (load && load()) || [], persist: true };
 
@@ -82,7 +96,7 @@
     };
   }
 
-  const api = { createDrives, score, habit };
+  const api = { createDrives, score, habit, clean };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Drives = api;
 })(typeof self !== "undefined" ? self : this);

@@ -11,7 +11,7 @@
   const $ = id => document.getElementById(id);
   const D = window.CanDecode;
   const LISTEN = Object.values(D.IDS);
-  const KEY = { drives: "de.drives.v1", speed: "de.speed.v1", trip: "de.trip.v1", tripT: "de.trip.tessie.v1", cfg: "de.cfg.v1", tok: "de.tessie.v1" };
+  const KEY = { drives: "de.drives.v1", speed: "de.speed.v1", trip: "de.trip.v1", tripT: "de.trip.tessie.v1", cfg: "de.cfg.v1", tok: "de.tessie.v1", csv: "de.csv.v1" };
   const DEMO_SPEED = 8;
   const tripKey = src => (src === "tessie" ? KEY.tripT : KEY.trip);
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
@@ -85,7 +85,12 @@
       if (app.connecting) { app.abortAuto = true; status("connecting", "Finishing the last attempt…"); for (let i = 0; i < 48 && app.connecting; i++) await new Promise(r => setTimeout(r, 250)); }
       if (app.source === "car") await disconnect();
       app.userStopped = false;
-      if (picked) app.port = picked;
+      if (picked) {
+        app.port = picked;
+        // Web Serial can't tell two Bluetooth serial adapters apart (same service ID), so keep permission for the one
+        // you picked only; auto-connect then can't open the wrong one. Choose adapter still lists them all.
+        for (const p of known) if (p !== picked) p.forget?.().catch(() => {});
+      }
     }
     if (app.connecting) return; app.connecting = true; app.abortAuto = false;
     if (auto && app.source) { app.connecting = false; return; }
@@ -111,7 +116,6 @@
       await link.startMonitor();
       status("live", "Live");
       $("adapter").textContent = `${link.chip.replace(/\s+/g, " ")} · ${link.mode === "stn" ? "STN filters, continuous" : "ELM round-robin, ~1 s refresh"} · listen-only`;
-      keepAwake();
       if (auto) notice("Connected to the adapter automatically.", "info");
     } catch (e) {
       await link.close().catch(() => {});
@@ -150,7 +154,8 @@
       notice(s.message || "Lost the Bluetooth link to the adapter. Reconnecting…", "warn");
       status("connecting", "Reconnecting");
       const link = app.link; app.link = null;
-      setTimeout(async () => { try { await link?.close(); } catch (e) {} if (app.source === "car") connectCar(); }, 2500);
+      // Reconnect through the quiet auto path: a miss keeps the remembered adapter and auto-connect retries every 15 s.
+      setTimeout(async () => { try { await link?.close(); } catch (e) {} if (app.source === "car" && !app.link) { app.source = null; connectCar(true); } }, 2500);
     }
   }
   async function disconnect() {
@@ -160,7 +165,7 @@
     if (src === "tessie") stopTessie();
     app.source = null;
     if (app.link) { await app.link.close().catch(() => {}); app.link = null; }
-    releaseAwake();
+    syncAwake();
     status("off", "Not connected");
   }
 
@@ -257,6 +262,7 @@
     if (app.rec && app.source && now - app.rec.last >= 1000) record(now);
     if (app.source === "car") status(live ? "live" : "quiet", live ? "Live" : "No CAN traffic");
     if (app.source === "tessie" && app.tessieAt) status(live ? "tessie" : "quiet", `Tessie · ${app.carState === "asleep" ? "car asleep · " : ""}${age(Date.now() - app.tessieAt)}`);
+    syncAwake();
     render(live);
   }
 
@@ -289,7 +295,6 @@
     $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(basis)} Wh/mi · rated ${fx(L.ratedRangeMi)} mi` : "rated range";
     renderGuide(usable, basis);
     renderGauge(live, tripAvg);
-    renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh());
     renderScore(tripMi, tripAvg);
     // battery
     const soc = L.socUI ?? L.uiSOC;
@@ -310,7 +315,7 @@
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
     // Slower-changing panels redraw once a second (or immediately on an explicit refresh) to keep the phone cool.
     const nowR = performance.now(), slow = live === true && nowR - (app.slowAt || 0) < 1000 && !app.forceSlow;
-    if (!slow) { app.slowAt = nowR; app.forceSlow = false; renderBreakdown(t); renderPlan(usable); }
+    if (!slow) { app.slowAt = nowR; app.forceSlow = false; renderBreakdown(t); renderPlan(usable); renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh()); }
     // bricks
     if (!slow) renderBricks();
     renderCoach(live, slow);
@@ -330,10 +335,12 @@
     $("brakePill").dataset.on = String(L.brakeOn === true);
     const tip = $("tip"), tip2 = $("tip2");
     tip2.textContent = "";
-    if (app.source === "tessie") { tip.textContent = "Pedal coaching needs the adapter. Tessie doesn't send pedal or brake data."; tip.dataset.tone = "idle"; }
-    else if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; }
+    if (app.source === "tessie") { tip.textContent = "Pedal coaching needs the adapter. Tessie doesn't send pedal or brake data."; tip.dataset.tone = "idle"; app.saidKind = null; }
+    else if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; app.saidKind = null; }
     else if (st.headline) {
       tip.textContent = st.headline.text;
+      // Screen readers hear a tip once when it changes, not on every live-number refresh (4× a second).
+      if (app.saidKind !== st.headline.kind) { app.saidKind = st.headline.kind; $("tipSay").textContent = st.headline.text; }
       tip.dataset.tone = st.headline.kind === "parked" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
       const next = st.headline.kind !== "parked" && st.list.find(q => q.kind !== st.headline.kind && !q.standing);
       tip2.textContent = next ? next.text : "";
@@ -526,7 +533,8 @@
       if (!app.vin) {
         const list = (await tget("vehicles?only_active=true")).results || [];
         if (!list.length) throw Object.assign(new Error("No vehicles on this Tessie account."), { status: 0 });
-        app.vin = list[0].vin;
+        app.vin = (list.find(v => v.vin === cfg.tessieVin) || list[0]).vin;
+        showCars(list);
       }
       const [bat, st] = await Promise.all([tget(`${app.vin}/battery`), tget(`${app.vin}/state?use_cache=true`)]);
       if (app.source !== "tessie") return;
@@ -548,6 +556,16 @@
     } catch (e) { tessieError(e); }
     finally { app.tessieBusy = false; }
   }
+  // Several cars on the Tessie account: a picker in Settings (remembered). Option() sets text safely.
+  function showCars(list) {
+    $("cfgVinRow").hidden = list.length < 2;
+    $("cfgVin").replaceChildren(...list.map(v => new Option(`${v.last_state?.display_name || "Car"} · …${String(v.vin).slice(-6)}`, v.vin)));
+    $("cfgVin").value = app.vin;
+  }
+  $("cfgVin").addEventListener("change", async e => {
+    cfg.tessieVin = e.target.value; store(KEY.cfg, cfg);
+    if (app.source === "tessie") { await disconnect(); startTessie(); }
+  });
   function tessieError(e) {
     const s = e && e.status;
     if (s === 401 || s === 403) { notice("Tessie rejected the token. Paste a fresh one in Settings (Tessie app → Settings → API).", "bad"); disconnect(); return; }
@@ -632,7 +650,7 @@
   document.querySelectorAll("#goalQuick [data-mi]").forEach(b => b.addEventListener("click", () => setGoal(+b.dataset.mi)));
   $("goalForm").addEventListener("submit", e => { e.preventDefault(); setGoal(Math.round(parseFloat(String($("goalMi").value).replace(/[^0-9.]/g, "")))); });
   $("goalClear").addEventListener("click", () => { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); });
-  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) keepAwake(); }
+  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); syncAwake(); }
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
   setDrive(!!cfg.drive);
 
@@ -817,8 +835,14 @@
       ${compareLine(d)}`;
     $("sumDelete").hidden = d.demo || !drives.history.some(x => x.id === d.id);
     $("sumDelete").dataset.id = d.id; $("sumDelete").textContent = "Delete drive";
-    $("summary").hidden = false;
+    if ($("summary").hidden) app.sumFrom = document.activeElement;      // focus goes back there on close
+    $("summary").hidden = false; $("sumDone").focus();
   }
+  function closeSummary() {
+    if ($("summary").hidden) return;
+    $("summary").hidden = true; app.sumFrom?.focus?.(); app.sumFrom = null;
+  }
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSummary(); });
   // How this drive compares with your typical one (median of the other saved drives).
   function compareLine(d) {
     const others = drives.history.filter(x => x.id !== d.id && x.wh > 0);
@@ -827,13 +851,13 @@
     const pct = Math.round((d.wh / med - 1) * 100);
     return `<p class="note" style="margin-top:10px">${pct === 0 ? "Same as" : pct < 0 ? `${-pct}% more efficient than` : `${pct}% less efficient than`} your typical drive (${Math.round(med)} Wh/mi).</p>`;
   }
-  $("sumDone").addEventListener("click", () => ($("summary").hidden = true));
+  $("sumDone").addEventListener("click", closeSummary);
   $("sumDelete").addEventListener("click", e => {
     const b = e.currentTarget;
     if (b.textContent !== "Tap again to delete") { b.textContent = "Tap again to delete"; return; }
-    drives.remove(b.dataset.id); $("summary").hidden = true; renderDrives();
+    drives.remove(b.dataset.id); closeSummary(); renderDrives();
   });
-  $("summary").addEventListener("click", e => { if (e.target.id === "summary") $("summary").hidden = true; });
+  $("summary").addEventListener("click", e => { if (e.target.id === "summary") closeSummary(); });
   function renderDrives() {
     const h = drives.history, box = $("driveList");
     $("endDrive").hidden = !drives.active;
@@ -917,30 +941,103 @@
     const b = L.bricks.filter(v => v != null), idx = cfg.oneBased ? cfg.brick - 1 : cfg.brick;
     const r = [new Date().toISOString(), L.speedMph, L.powerKW, L.packV, L.packA, L.odoMi, L.totalOutKWh, L.totalInKWh, L.socUI, L.energyRemainingKWh, L.fullPackKWh,
       b.length ? Math.min(...b) : null, b.length ? Math.max(...b) : null, cfg.brick, L.bricks[idx], L.packTminC, L.packTmaxC];
-    app.rec.rows.push(r.map(v => (v == null ? "" : typeof v === "number" ? +v.toFixed(4) : v)).join(","));
+    const row = r.map(v => (v == null ? "" : typeof v === "number" ? +v.toFixed(4) : v)).join(",");
+    app.rec.rows.push(row); app.rec.pending.push([++app.rec.n, row]);
     app.rec.last = now;
-    if (app.rec.rows.length > 36001) app.rec.rows.splice(1, 1);
+    if (app.rec.rows.length > MAX_ROWS + 1) app.rec.rows.splice(1, 1);
+    if (app.rec.pending.length >= 10) flushRec();
   }
   function toggleRec() {
-    if (app.rec) { app.lastCsv = app.rec.rows.join("\n"); app.rec = null; }
-    else app.rec = { rows: [COLS.join(",")], last: 0, started: new Date() };
+    if (app.rec) { flushRec(); app.lastCsv = app.rec.rows.join("\n"); app.rec = null; store(KEY.csv, { state: "stopped" }); }
+    else {
+      app.rec = { rows: [COLS.join(",")], last: 0, started: new Date(), n: 0, pending: [] }; app.lastCsv = null;
+      store(KEY.csv, { state: "recording" }); csvStore("readwrite", s => s.clear());
+    }
     render(true);
+  }
+  // Rows also go to IndexedDB (10 at a time, and whenever the page is hidden), so a reload or a discarded background
+  // tab doesn't lose the recording. The last one stays downloadable until the next recording starts.
+  const MAX_ROWS = 36000;                                   // 10 h at one row a second
+  let csvDb = null;
+  function csvStore(mode, fn) {
+    if (!window.indexedDB) return Promise.resolve(null);
+    csvDb ||= new Promise((res, rej) => { const r = indexedDB.open("drive-energy", 1); r.onupgradeneeded = () => r.result.createObjectStore("csv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    return csvDb.then(db => new Promise((res, rej) => {
+      const tx = db.transaction("csv", mode), req = fn(tx.objectStore("csv"));
+      tx.oncomplete = () => res(req ? req.result : null); tx.onerror = tx.onabort = () => rej(tx.error);
+    })).catch(() => null);
+  }
+  function flushRec() {
+    const r = app.rec; if (!r || !r.pending.length) return;
+    const rows = r.pending; r.pending = [];
+    csvStore("readwrite", s => { for (const [k, v] of rows) s.put(v, k); const old = rows[rows.length - 1][0] - MAX_ROWS; if (old > 0) s.delete(IDBKeyRange.upperBound(old)); });
+  }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) flushRec(); });
+  if (load(KEY.csv, null)) csvStore("readonly", s => s.getAll()).then(rows => {
+    if (!rows || !rows.length || app.rec) return;
+    app.lastCsv = [COLS.join(","), ...rows].join("\n");
+    if (load(KEY.csv, {}).state === "recording") { store(KEY.csv, { state: "stopped" }); notice(`Recovered an unfinished CSV recording (${rows.length} rows). Tap Download CSV to save it.`, "info"); }
+  });
+  function saveFile(name, text, type) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
   function download() {
     const text = app.rec ? app.rec.rows.join("\n") : app.lastCsv; if (!text) return;
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
-    a.download = `drive-energy-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}${app.source === "demo" ? "-DEMO" : ""}.csv`;
-    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    saveFile(`drive-energy-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}${app.source === "demo" ? "-DEMO" : ""}.csv`, text, "text/csv");
   }
 
-  /* ---------------- screen wake ---------------- */
-  async function keepAwake() {
-    if (!cfg.keepAwake || !("wakeLock" in navigator)) return;
-    try { app.wake = await navigator.wakeLock.request("screen"); } catch (e) {}
+  /* ---------------- backup ----------------
+     Drives, the speed table and trips live only in this browser's storage. Ask Chrome to keep it (otherwise it may clear
+     it when space runs low), and let it be saved to a file and restored. The Tessie token is never exported. */
+  navigator.storage?.persist?.().catch(() => {});
+  $("exportBtn").addEventListener("click", () => {
+    if (app.trip && (app.source === "car" || app.source === "tessie")) store(tripKey(app.source), app.trip);
+    const data = { app: "drive-energy", version: 1, exported: new Date().toISOString(),
+      drives: load(KEY.drives, []), speed: load(KEY.speed, {}), trip: load(KEY.trip, null), tessieTrip: load(KEY.tripT, null) };
+    saveFile(`drive-energy-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), "application/json");
+  });
+  confirmTap($("importBtn"), "Tap again: replaces this phone's drives", () => $("importFile").click());
+  const finite = v => typeof v === "number" && isFinite(v);
+  function cleanTrip(t) {
+    const NUM = ["t0", "odo0", "lastOdo", "lastNet", "lastIn", "drive", "park", "regen", "charged"], EBK = ["cruise", "accel", "climate", "parked", "regen"];
+    if (!t || typeof t !== "object" || !/^[cs][oi]$/.test(t.src) || !NUM.every(k => finite(t[k]))) return null;
+    if (!Array.isArray(t.D) || !Array.isArray(t.E) || !t.D.length || t.D.length !== t.E.length || !t.D.every(finite) || !t.E.every(finite)) return null;
+    const out = { src: t.src, D: t.D.slice(-1400), E: t.E.slice(-1400) };
+    for (const k of NUM) out[k] = t[k];
+    if (t.eb && EBK.every(k => finite(t.eb[k]))) out.eb = Object.fromEntries(EBK.map(k => [k, t.eb[k]]));
+    return out;
   }
-  function releaseAwake() { try { app.wake?.release(); } catch (e) {} app.wake = null; }
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && app.source) keepAwake(); });
+  $("importFile").addEventListener("change", async e => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    let o = null;
+    try { o = JSON.parse(await f.text()); } catch (err) {}
+    if (!o || o.app !== "drive-energy") { notice("That file isn't a Drive Energy backup.", "bad"); return; }
+    // The file is untrusted: keep only well-formed numbers. Drives are rebuilt, so their text is regenerated here.
+    const list = Array.isArray(o.drives) ? o.drives.map(d => Drives.clean(d)).filter(Boolean).slice(0, 60) : [], speed = {};
+    for (const [k, v] of Object.entries(o.speed && typeof o.speed === "object" ? o.speed : {}))
+      if (/^\d{1,3}(\|(x|<40|40-59|60-79|80\+))?$/.test(k) && v && finite(v.kwh) && finite(v.mi) && v.mi >= 0) speed[k] = { kwh: v.kwh, mi: v.mi };
+    if (app.source) await disconnect();                     // so nothing running saves over the import before the reload
+    store(KEY.drives, list); store(KEY.speed, speed); store(KEY.trip, cleanTrip(o.trip)); store(KEY.tripT, cleanTrip(o.tessieTrip));
+    location.reload();
+  });
+
+  /* ---------------- screen wake ----------------
+     Screen stays on while a source is running or Drive view is on (if the setting allows). Checked every tick, so it
+     comes back after a tab switch; one lock at a time, so turning either off really releases it. */
+  async function syncAwake() {
+    const want = () => cfg.keepAwake && (!!app.source || cfg.drive);
+    if (!want()) { releaseAwake(); return; }
+    if (!("wakeLock" in navigator) || document.hidden || app.waking || (app.wake && !app.wake.released) || performance.now() < (app.wakeRetryAt || 0)) return;
+    app.waking = true;
+    try { app.wake = await navigator.wakeLock.request("screen"); if (!want()) releaseAwake(); }
+    catch (e) { app.wakeRetryAt = performance.now() + 5000; }                 // e.g. battery saver: don't ask 4× a second
+    finally { app.waking = false; }
+  }
+  function releaseAwake() { try { app.wake?.release().catch(() => {}); } catch (e) {} app.wake = null; }
 
   /* ---------------- controls ---------------- */
   // Wrapped: passing connectCar directly would hand it the click event as its "auto" argument (the v21 bug:
@@ -949,26 +1046,35 @@
   $("chooseBtn").addEventListener("click", () => connectCar(false, true));
   $("demoBtn").addEventListener("click", () => (app.source === "demo" ? disconnect() : startDemo()));
   $("disconnectBtn").addEventListener("click", disconnect);
-  $("resetTrip").addEventListener("click", () => { app.trip = null; drives.cancel(); stops.reset(); app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
+  // Erasing links ask for a second tap within 4 s.
+  function confirmTap(btn, armedText, action) {
+    const label = btn.textContent; let timer = null;
+    btn.addEventListener("click", () => {
+      if (!timer) { btn.textContent = armedText; timer = setTimeout(() => { timer = null; btn.textContent = label; }, 4000); return; }
+      clearTimeout(timer); timer = null; btn.textContent = label; action();
+    });
+  }
+  confirmTap($("resetTrip"), "Tap again to reset the trip", () => { app.trip = null; drives.cancel(); stops.reset(); app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
   $("tessieBtn").addEventListener("click", () => (app.source === "tessie" ? disconnect() : startTessie()));
   $("cfgTok").value = tessieToken() ? "••••••••" : "";
   $("cfgTok").addEventListener("change", e => { const v = e.target.value.trim(); if (!v || /^•+$/.test(v)) return; try { localStorage.setItem(KEY.tok, v); } catch (err) {} e.target.value = "••••••••"; notice("Tessie token saved on this device only.", "info"); });
   $("cfgTokClear").addEventListener("click", () => { try { localStorage.removeItem(KEY.tok); } catch (e) {} $("cfgTok").value = ""; if (app.source === "tessie") disconnect(); });
   $("recBtn").addEventListener("click", toggleRec);
-  $("resetSpeed").addEventListener("click", () => { app.coach.resetBuckets(); render(false); });
+  confirmTap($("resetSpeed"), "Tap again to erase your speed table", () => { app.coach.resetBuckets(); app.forceSlow = true; render(false); });
   $("cruiseBtn").addEventListener("click", () => { app.coach.setCruise(!app.coach.state.cruiseOn); render(true); });
   $("dlBtn").addEventListener("click", download);
   document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { cfg.win = +b.dataset.w; store(KEY.cfg, cfg); syncSeg(); lastChart = 0; }));
   function syncSeg() { document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.w === cfg.win))); }
   $("cfgBrick").value = cfg.brick; $("cfgBase").value = cfg.oneBased ? "1" : "0"; $("cfgAwake").checked = cfg.keepAwake;
-  $("cfgBrick").addEventListener("change", e => { const n = Math.round(+e.target.value); const lo = cfg.oneBased ? 1 : 0; if (n >= lo && n <= lo + 107) { cfg.brick = n; store(KEY.cfg, cfg); } });
-  $("cfgBase").addEventListener("change", e => { cfg.oneBased = e.target.value === "1"; store(KEY.cfg, cfg); });
+  $("cfgBrick").addEventListener("change", e => { const n = Math.round(+e.target.value); const lo = cfg.oneBased ? 1 : 0; if (n >= lo && n <= lo + 107) { cfg.brick = n; store(KEY.cfg, cfg); } else e.target.value = cfg.brick; });
+  // Keep the brick number inside the new numbering's range (108 isn't a brick in 0–107, 0 isn't one in 1–108).
+  $("cfgBase").addEventListener("change", e => { cfg.oneBased = e.target.value === "1"; const lo = cfg.oneBased ? 1 : 0; cfg.brick = Math.min(lo + 107, Math.max(lo, cfg.brick)); $("cfgBrick").value = cfg.brick; store(KEY.cfg, cfg); });
   $("cfgAuto").checked = cfg.autoConnect !== false;
   $("cfgAuto").addEventListener("change", e => { cfg.autoConnect = e.target.checked; store(KEY.cfg, cfg); if (e.target.checked) autoTry(); });
   $("cfgAlerts").value = cfg.alerts || "off";
   $("cfgAlerts").addEventListener("change", e => { cfg.alerts = e.target.value; store(KEY.cfg, cfg); unlockAudio(); });
   $("alertTest").addEventListener("click", () => { unlockAudio(); fireAlert("ease", true); setTimeout(() => fireAlert("brake", true), 900); });
-  $("cfgAwake").addEventListener("change", e => { cfg.keepAwake = e.target.checked; store(KEY.cfg, cfg); if (cfg.keepAwake && app.source) keepAwake(); else releaseAwake(); });
+  $("cfgAwake").addEventListener("change", e => { cfg.keepAwake = e.target.checked; store(KEY.cfg, cfg); syncAwake(); });
   window.addEventListener("resize", () => { lastChart = 0; });
 
   // frame rate counter + main loop
