@@ -368,6 +368,40 @@ body.cluster.drive.side .gaugewrap, body.cluster.drive.side .sdial{width:min(100
 body.cluster.drive.side .gaugewrap .gnum{font-size:30px} body.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:22px} body.cluster.drive.side .sspd{font-size:40px}
 body.car.cluster.drive.side .gaugewrap .gnum{font-size:56px} body.car.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:34px}
 body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.car.cluster .seff{font-size:24px}
+/* Drive view extras: a status strip like a cluster's (gear, time, outside temperature), a Charge block that stands out
+   (charge, range, this drive) in place of the tiles, a red banner for warnings. */
+.dstrip, .dhero{display:none}
+body.drive .dstrip{display:flex;align-items:center;gap:16px;font:600 15px var(--f-num);color:var(--fg);margin-right:auto;margin-left:14px}
+.prnd{display:flex;gap:7px;font-weight:700;color:var(--faint);opacity:.55} .prnd i{font-style:normal}
+.prnd:not([data-g=""]){opacity:1}
+.prnd[data-g="P"] i:nth-child(1), .prnd[data-g="R"] i:nth-child(2), .prnd[data-g="N"] i:nth-child(3), .prnd[data-g="D"] i:nth-child(4){color:var(--fg)}
+body.drive .kpis{display:none}
+body.drive .dhero{display:block;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0}
+.dlab{font:700 10.5px var(--f-num);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)} .dhero .dlab+*{margin-top:2px}
+.dhero .dlab:not(:first-child){margin-top:10px}
+.dsoc{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap} .dpct{font:700 46px/1 var(--f-num);font-variant-numeric:tabular-nums}
+.dpct[data-tone="warn"]{color:var(--warn)} .dpct[data-tone="bad"]{color:var(--bad)}
+.dsub{font-size:13px;color:var(--muted)} .dvs[data-tone="good"]{color:var(--regen)} .dvs[data-tone="warn"]{color:var(--warn)} .dvs[data-tone="bad"]{color:var(--bad)}
+.dbar{height:10px;border-radius:5px;background:var(--inset);margin:8px 0 9px;overflow:hidden}
+.dbar i{display:block;height:100%;width:0;border-radius:5px;background:var(--regen);transition:width .5s}
+.dbar i[data-tone="warn"]{background:var(--warn)} .dbar i[data-tone="bad"]{background:var(--bad)}
+.drng #dRng{font:700 27px/1.1 var(--f-num)}
+.dthis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:4px}
+.dhero{container-type:inline-size} @container (max-width:220px){.dthis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.dthis div{background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:6px 8px;min-width:0}
+.dthis b{display:block;font:700 18px var(--f-num);font-variant-numeric:tabular-nums} .dthis span{font-size:11px;color:var(--muted)}
+.dscore{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;font:12.5px var(--f-ui);color:var(--muted)}
+.dscore>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dscore b{font:700 20px var(--f-num)} .dscore b[data-tone="good"]{color:var(--regen)} .dscore b[data-tone="warn"]{color:var(--warn)} .dscore b[data-tone="bad"]{color:var(--bad)}
+body.cluster.drive.side .dhero{grid-area:kpis;align-self:center} body.cluster.drive:not(.side) .dhero{grid-column:1/-1}
+body.cluster.drive.side:not(.car) #view-cockpit{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr)}
+@media (max-width:640px){body.drive .dstrip{gap:10px;font-size:13px;margin-left:6px}}
+body.car.drive .dstrip{font-size:18px;gap:22px} body.car.drive .dpct{font-size:60px} body.car.drive .drng #dRng{font-size:34px}
+body.car.drive .dthis b{font-size:22px} body.car.drive .dsub{font-size:15px}
+body.drive .coach[data-tone="bad"]{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 13%,var(--surface))}
+body.drive .coach[data-tone="bad"] .tip::before{content:"⚠ "}
+body.drive .coach[data-tone="bad"] .tip{color:var(--bad);font-size:22px} body.drive.side .coach[data-tone="bad"] .tip{font-size:19px}
+body.car.drive.side .coach[data-tone="bad"] .tip{font-size:27px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -401,6 +435,7 @@ body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.c
         <span class="chip" id="chip" data-s="off"><i></i><span id="chipText">Not connected</span></span>
       </div>
     </div>
+    <div class="dstrip"><span class="prnd" id="dGear" data-g=""><i>P</i><i>R</i><i>N</i><i>D</i></span><span id="dClock"></span><span id="dOut"></span></div>
     <div class="actions">
       <button class="btn" id="demoBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg><span id="demoLbl">Demo</span></button>
       <button class="btn" id="driveBtn" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-car"/></svg>Drive view</button>
@@ -426,7 +461,7 @@ body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.c
 
   <!-- ============ Cockpit ============ -->
   <section class="view" id="view-cockpit" role="tabpanel" aria-labelledby="tab-cockpit">
-    <section class="coach" aria-label="Coach">
+    <section class="coach" id="coach" aria-label="Coach">
       <div class="cicon"><svg class="ic" aria-hidden="true"><use href="#i-sparkles"/></svg></div>
       <div class="cmain">
         <p class="tip" id="tip" data-tone="idle">Connect the car to start coaching.</p>
@@ -459,6 +494,19 @@ body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.c
             </div>
             <div class="gfoot"><span class="seff" id="sEff" data-tone="">—</span><span class="gtarget" id="sSub"></span></div>
           </div>
+          <section class="dhero" aria-label="Charge and range">
+            <div class="dlab">Charge</div>
+            <div class="dsoc"><span class="dpct" id="dSoc">—</span><span class="dsub" id="dKwh"></span></div>
+            <div class="dbar"><i id="dBar"></i></div>
+            <div class="drng"><span id="dRng">—</span> <span class="dsub" id="dRngL">at this pace</span></div>
+            <div class="dsub"><span id="dRngSub"></span><span class="dvs" id="dVs"></span></div>
+            <div class="dlab">This drive</div>
+            <div class="dthis">
+              <div><b id="dMi">—</b><span id="dMiU">mi</span></div><div><b id="dMin">—</b><span>min</span></div>
+              <div><b id="dWh">—</b><span id="dWhU">Wh/mi</span></div><div><b id="dKwhUsed">—</b><span>kWh</span></div>
+            </div>
+            <div class="dscore"><span>Trip score · <span id="dScoreSub"></span></span><b id="dScore">—</b></div>
+          </section>
           <div class="kpis">
             <div class="kpi"><div class="label">Trip score</div><div class="v" id="effScore">—</div><div class="sub" id="effScoreSub">this trip</div></div>
             <div class="kpi"><div class="label">Range at this pace</div><div class="v" id="proj">—</div><div class="sub" id="projSub">—</div></div>
@@ -498,7 +546,7 @@ body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.c
     </div>
 
     <div class="guide" aria-label="Max-range guide">
-      <div class="gchip" id="gRange"><span class="glabel">Range vs rated</span><span class="gval" id="gRangeV">—</span></div>
+      <div class="gchip" id="gRange"><span class="glabel" id="gRangeL">Range vs rated</span><span class="gval" id="gRangeV">—</span></div>
       <div class="gchip" id="gSpeed"><span class="glabel">Best speed</span><span class="gval" id="gSpeedV">—</span></div>
       <div class="gchip" id="gClim"><span class="glabel" id="gClimL">Climate</span><span class="gval" id="gClimV">—</span></div>
       <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel"><svg class="ic" aria-hidden="true" style="width:13px;height:13px"><use href="#i-flag"/></svg><span id="gGoalL">Range goal</span></span><span class="gval" id="gGoalV">Set a goal</span></button>
@@ -709,15 +757,15 @@ body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.c
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v38</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v39</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=38"></script>
-<script src="elm.js?v=38"></script>
-<script src="sim.js?v=38"></script>
-<script src="units.js?v=38"></script>
-<script src="coach.js?v=38"></script>
-<script src="drives.js?v=38"></script>
-<script src="stops.js?v=38"></script>
-<script src="app.js?v=38"></script>
+<script src="decode.js?v=39"></script>
+<script src="elm.js?v=39"></script>
+<script src="sim.js?v=39"></script>
+<script src="units.js?v=39"></script>
+<script src="coach.js?v=39"></script>
+<script src="drives.js?v=39"></script>
+<script src="stops.js?v=39"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>

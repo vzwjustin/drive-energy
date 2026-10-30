@@ -94,6 +94,7 @@
       update, finish: (x, now) => (s.cur ? finish(x, now) : null),
       cancel() { s.cur = null; s.stoppedFor = 0; },
       get active() { return !!s.cur; }, get history() { return s.history; },
+      get current() { return s.cur ? { t0: s.cur.t0, odo: s.cur.start.odo, drive: s.cur.start.drive } : null; },   // where this drive started
       remove(id) { s.history = s.history.filter(d => d.id !== id); if (save) save(s.history); },
     };
   }

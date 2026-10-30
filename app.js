@@ -342,6 +342,7 @@
     app.hs = healthNow();
     renderGauge(live, tripAvg);
     renderScore(tripMi, tripAvg);
+    if (document.body.classList.contains("drive")) renderDash(soc, usable, basis, chg);
     // battery
     $("battFill").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`; txt("battPct", soc != null ? `${fx(soc, 1)}%` : "—");
     set("eRem", fx(L.energyRemainingKWh, 1), "kWh"); set("eFull", L.fullEst && L.fullPackKWh ? `~${fx(L.fullPackKWh, 1)}` : fx(L.fullPackKWh, 1), "kWh");
@@ -376,6 +377,29 @@
     txt("recBtn", app.rec ? `Stop recording (${app.rec.rows.length - 1} rows)` : "Record CSV");
     hide("dlBtn", !(app.rec && app.rec.rows.length > 1) && !app.lastCsv);
     if (cfg.tab === "trip" && performance.now() - lastChart > 900) { lastChart = performance.now(); drawChart(t); }
+  }
+
+  // Drive view: the status strip (gear, time, outside temperature) and the Charge block (charge, range, this drive),
+  // what a driver glances at, biggest first.
+  function renderDash(soc, usable, basis, chg) {
+    data("dGear", "g", ["P", "R", "N", "D"].includes(L.gear) ? L.gear : "");
+    txt("dClock", new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    txt("dOut", L.outsideC != null ? `${Math.round(U.temp(L.outsideC))}${U.t}` : "");
+    const tone = soc == null ? "" : soc < 10 ? "bad" : soc < 20 ? "warn" : "good";
+    txt("dSoc", soc == null ? "—" : `${fx(soc)}%`); setTone("dSoc", tone); setTone("dBar", tone);
+    $("dBar").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`;
+    txt("dKwh", L.energyRemainingKWh != null ? `${fx(L.energyRemainingKWh, 1)} kWh left` : "");
+    const pace = usable != null && basis > 50, mi = pace ? (usable * 1000) / basis : L.ratedRangeMi, d = pace && L.ratedRangeMi > 0 ? mi - L.ratedRangeMi : null;
+    txt("dRng", mi != null ? `${fx(U.dist(mi))} ${U.d}` : "—"); txt("dRngL", pace ? "at this pace" : "rated");
+    txt("dRngSub", chg ? [`Charging ${kwTxt(chg.kw)} kW`, chgEta(chg)].filter(Boolean).join(" · ") : d != null ? `rated ${fx(U.dist(L.ratedRangeMi))} ${U.d} · ` : "");
+    txt("dVs", !chg && d != null ? `${d >= 0 ? "+" : "−"}${Math.abs(Math.round(U.dist(d)))} ${U.d} vs rated` : ""); setTone("dVs", d == null ? "" : d >= 0 ? "good" : d > -15 ? "warn" : "bad");   // as the Range vs rated chip
+    // This drive: from where the current drive started (it starts when the car moves, as drive summaries do).
+    const cur = drives.current, odo = L.odoMi ?? app.synthOdo, t = app.trip;
+    const dmi = cur && odo != null ? Math.max(0, odo - cur.odo) : null, kwh = cur && t ? t.drive - cur.drive : null;
+    txt("dMi", dmi == null ? "—" : fx(U.dist(dmi), 1)); txt("dMiU", U.d);
+    txt("dMin", cur ? String(Math.round((Date.now() - cur.t0) / 60000)) : "—");
+    txt("dWh", dmi > 0.3 && kwh > 0 ? String(Math.round(U.wh((kwh * 1000) / dmi))) : "—"); txt("dWhU", U.e);
+    txt("dKwhUsed", kwh == null ? "—" : fx(Math.max(0, kwh), 1));
   }
 
   function renderCoach(live, slow) {
@@ -422,7 +446,7 @@
       const kind = `health.${h.phase}.${s && s.turnIn <= 0.2 ? 1 : 0}`;
       if (app.saidKind !== kind) { app.saidKind = kind; txt("tipSay", text); }
     }
-    if (t1 != null) { txt("tip", t1); setTone("tip", t1Tone); }
+    if (t1 != null) { txt("tip", t1); setTone("tip", t1Tone); setTone("coach", t1Tone); }   // the banner turns red for a warning
     txt("tip2", t2);
     if (slow || cfg.tab !== "trip") return;                // the speed curve lives on the Trip tab
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
@@ -743,8 +767,12 @@
 
   function renderGuide(usable, basis) {
     const tg = app.tgt, set2 = (id, text, tone) => { txt(id + "V", text); setTone(id, tone); };
-    // 1. Range vs the car's own rated estimate, at your current pace.
-    if (usable != null && basis > 50 && L.ratedRangeMi > 0) {
+    // 1. Range vs the car's own rated estimate, at your current pace. In Drive view, while the car holds regen well below
+    // its usual (cold or nearly full pack), this slot says so instead: range vs rated is in the Charge block there.
+    const rl = document.body.classList.contains("drive") && L.maxRegenKW > 0 && L.maxRegenKW < 40 ? Math.round(L.maxRegenKW) : null;
+    txt("gRangeL", rl != null ? "Regen limited" : "Range vs rated");
+    if (rl != null) set2("gRange", `${rl} kW${(L.socUI ?? L.uiSOC) > 90 ? " · nearly full" : L.packTminC != null && L.packTminC < 15 ? " · cold pack" : ""}`, "warn");
+    else if (usable != null && basis > 50 && L.ratedRangeMi > 0) {
       const d = (usable * 1000) / basis - L.ratedRangeMi;
       set2("gRange", `${d >= 0 ? "+" : "−"}${Math.abs(Math.round(U.dist(d)))} ${U.d}`, d >= 0 ? "good" : d > -15 ? "warn" : "bad");
     } else set2("gRange", "drive to see", "");
@@ -1105,10 +1133,13 @@
   // 30% share of pedal time in the 15–40% range. Shown once the trip has half a mile.
   function renderScore(tripMi, tripAvg) {
     const rated = ratedWh(), el = $("effScore");
-    if (!(tripMi > 0.5) || !(tripAvg > 0) || !rated) { html(el, "—"); setTone(el, ""); txt("effScoreSub", `drive ${U.metric ? "1 km" : "half a mile"} to score`); return; }
+    const show = (sc, tone, sub) => {                     // Drive view's Charge block shows it too
+      html(el, sc == null ? "—" : `${sc}<small>/100</small>`); setTone(el, tone); txt("effScoreSub", sub);
+      txt("dScore", sc ?? "—"); setTone("dScore", tone); txt("dScoreSub", sub);
+    };
+    if (!(tripMi > 0.5) || !(tripAvg > 0) || !rated) return show(null, "", `drive ${U.metric ? "1 km" : "half a mile"} to score`);
     const r = tripAvg / rated, pedal = app.coach.score(), sc = Drives.score(tripAvg, rated, pedal);   // same formula as drive summaries
-    html(el, `${sc}<small>/100</small>`); setTone(el, sc >= 80 ? "good" : sc >= 60 ? "warn" : "bad");
-    txt("effScoreSub", `${r <= 1 ? Math.round((1 - r) * 100) + "% under" : Math.round((r - 1) * 100) + "% over"} rated ${U.e}${pedal != null ? ` · pedal ${pedal}% in range` : ""}`);
+    show(sc, sc >= 80 ? "good" : sc >= 60 ? "warn" : "bad", `${r <= 1 ? Math.round((1 - r) * 100) + "% under" : Math.round((r - 1) * 100) + "% over"} rated ${U.e}${pedal != null ? ` · pedal ${pedal}% in range` : ""}`);
   }
 
   // Power flow bar: zero sits at 28% so the "using" side gets more room. √ scale so cruising is visible.

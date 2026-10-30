@@ -606,6 +606,7 @@ const test = async (name, fn) => {
     app.click("tessieBtn");
     for (let i = 0; i < 6; i++) { await wait(500); tes.car.odometer += 0.5; tes.car.energy -= 0.6; }
     assert.ok(buzz.some(p => JSON.stringify(p) === "[250]"), "warn pattern: " + JSON.stringify(buzz));
+    assert.strictEqual(app.el("coach").dataset.tone, "bad", "the banner turns red (Drive view styles it)");
     app.stop();
   });
 
@@ -651,6 +652,37 @@ const test = async (name, fn) => {
     const car = boot({ storage: { "de.tessie.v1": "tok" }, fetch: fakeTessie().fetch, scale: 20, ua }); await wait(50);
     assert.strictEqual(car.document.body.classList.contains("cluster"), true, "always on the car's screen");
     car.stop();
+  });
+
+  await test("Drive view: gear, time and outside temperature up top; charge, range and this drive stand out (Tessie)", async () => {
+    const tes = fakeTessie(); Object.assign(tes.car, { speed: 60, gear: "D", power: 20 });
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); app.click("driveBtn");
+    for (let i = 0; i < 6; i++) { await wait(500); tes.car.odometer += 0.5; tes.car.energy -= 0.15; }
+    assert.strictEqual(app.el("dGear").dataset.g, "D", "the gear letter that's lit");
+    assert.ok(/^\d{1,2}:\d{2}/.test(app.text("dClock")), app.text("dClock")); assert.strictEqual(app.text("dOut"), "77°F");
+    assert.deepStrictEqual([app.text("dSoc"), app.el("dSoc").dataset.tone], ["66%", "good"]); assert.ok(/^49\.\d kWh left$/.test(app.text("dKwh")), app.text("dKwh"));
+    assert.deepStrictEqual([app.text("dRngL"), app.text("dRngSub"), app.el("dVs").dataset.tone], ["at this pace", "rated 200 mi · ", "bad"]);
+    assert.ok(/^16\d mi$/.test(app.text("dRng")) && /^−3\d mi vs rated$/.test(app.text("dVs")), "~49 kWh at 300 Wh/mi: " + app.text("dRng") + " | " + app.text("dVs"));
+    assert.ok(parseFloat(app.text("dMi")) >= 1.5 && app.text("dMin") === "0" && app.text("dWh") === "300" && parseFloat(app.text("dKwhUsed")) >= 0.4,
+      "this drive: 0.15 kWh per 0.5 mi · " + ["dMi", "dMin", "dWh", "dKwhUsed"].map(app.text).join(" "));
+    assert.deepStrictEqual([app.el("dScore").dataset.tone, app.text("dScoreSub")], [app.el("effScore").dataset.tone, app.text("effScoreSub")], "trip score mirrored");
+    assert.ok(/^\d+$/.test(app.text("dScore")), app.text("dScore"));
+    tes.car.gear = "P"; tes.car.speed = 0; await wait(1300);
+    assert.strictEqual(app.el("dGear").dataset.g, "P");
+    app.stop();
+  });
+
+  await test("Drive view: the car holding regen back takes the Range vs rated chip (adapter)", async () => {
+    FAST.push(hexFrame(0x252, b => D.setBits(b, 0, 16, 25 / 0.01)));
+    const app = boot({ serial: fakeSerial() });
+    await wait(2500);
+    assert.strictEqual(app.text("gRangeL"), "Range vs rated", "only in Drive view");
+    app.click("driveBtn"); await wait(600);
+    assert.deepStrictEqual([app.text("gRangeL"), app.text("gRangeV"), app.el("gRange").dataset.tone], ["Regen limited", "25 kW", "warn"]);
+    app.click("driveBtn"); await wait(600);
+    assert.strictEqual(app.text("gRangeL"), "Range vs rated");
+    app.stop(); FAST.pop();
   });
 
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);
