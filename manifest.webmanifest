@@ -1,0 +1,11 @@
+{
+  "name": "Drive Energy",
+  "short_name": "Drive Energy",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1013",
+  "theme_color": "#0d1013",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
