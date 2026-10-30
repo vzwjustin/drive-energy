@@ -248,8 +248,8 @@
     // at a time while the current changes, so the live spread mixes moments.
     app.restSec = live && L.packA != null && Math.abs(L.packA) < 5 && (L.speedMph ?? 0) < 0.5 ? (app.restSec || 0) + dtSim : 0;
     if (app.restSec > 10) { const have = L.bricks.filter(v => v != null); if (have.length >= 100) app.restSpread = (Math.max(...have) - Math.min(...have)) * 1000; }
+    if (live && app.source) checkAlerts(now);              // Tessie's tips include the pack and low-charge warnings
     if (live && (app.source === "car" || app.source === "demo")) {
-      checkAlerts(now);
       const sd = stops.update({ mph: L.speedMph, kw: app.pEma, brake: L.brakeOn, pedal: L.pedalPct }, dtSim);
       if (sd) { app.lastStopAt = now; }
     }
@@ -271,7 +271,7 @@
     if (live && settled && app.source && app.trip) {         // Tessie too (gear from its shift state): no pedal or slowdown parts
       const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
       const done = drives.update({
-        odo, mph: L.speedMph, gear: L.gear, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen,
+        odo, mph: L.speedMph, gear: L.gear, drive: app.trip.drive, park: app.trip.park, regen: app.source === "tessie" ? null : app.trip.regen,
         climateKWh: L.compressorKW != null ? app.climateKWh : null, heavy: st.heavyEvents, friction: st.frictionEvents,
         accelKWh: app.trip.eb ? app.trip.eb.accel : 0, cruiseKWh: app.trip.eb ? app.trip.eb.cruise : 0,
         stopKinetic: stops.state.kinetic, stopRegen: stops.state.regen, stopCount: stops.state.n,
@@ -297,47 +297,65 @@
 
   /* ---------------- render ---------------- */
   const fx = (v, d = 0) => (v == null || !isFinite(v) ? "—" : v.toFixed(d));
-  const set = (id, v, unit) => { $(id).innerHTML = v === "—" ? "—" : `${v}${unit ? `<small>${unit}</small>` : ""}`; };
+  // Write only what changed: the Cockpit redraws 4× a second and the power bar every frame, and rewriting the same
+  // text still costs the browser a style pass and a mutation (slower still on the car's screen).
+  const node = x => (typeof x === "string" ? $(x) : x);
+  const txt = (x, s) => { const el = node(x); s = s == null ? "" : String(s); if (el.textContent !== s) el.textContent = s; };
+  const data = (x, k, v) => { const el = node(x); v = v == null ? "" : String(v); if (el.dataset[k] !== v) el.dataset[k] = v; };
+  const setTone = (x, t) => data(x, "tone", t);
+  const html = (x, h) => { const el = node(x); if (el.innerHTML !== h) el.innerHTML = h; };
+  const hide = (x, h) => { const el = node(x); if (el.hidden !== h) el.hidden = h; };
+  const set = (id, v, unit) => html(id, v === "—" ? "—" : `${v}${unit ? `<small>${unit}</small>` : ""}`);
+  const kwTxt = kw => (Math.abs(kw) < 10 ? Math.abs(kw).toFixed(1) : String(Math.round(Math.abs(kw))));
+  // Charging: power in, the charge limit and the time to reach it. Tessie says so outright; from the adapter they come
+  // from the energy still to add (to the limit) and the power going in, so they're estimates ("~").
+  function chargeNow() {
+    if (app.source === "tessie") return L.charging ? { kw: L.chargeKW ?? -(app.pEma ?? 0), limit: L.chargeLimit ?? null, h: L.chargeH } : null;
+    const kw = -(app.pEma ?? 0), k = kwhPerPct(), soc = L.socUI ?? L.uiSOC, left = L.toChargeCompleteKWh;
+    if (!(kw > 0.3) || L.gear === "D" || L.gear === "R" || (L.speedMph ?? 0) > 0.5) return null;
+    return { kw, est: true, limit: left != null && k && soc != null ? Math.min(100, soc + left / k) : null, h: left > 0.05 ? left / kw : null };
+  }
+  const chgEta = c => (c.h > 0 ? `${c.limit != null ? `${c.est ? "~" : ""}${Math.round(c.limit)}%` : "Done"} in ${c.est ? "~" : ""}${hm(c.h * 3.6e6)}` : c.limit != null ? `to ${Math.round(c.limit)}%` : "");
   let lastChart = 0;
   function render(live) {
-    const t = app.trip, soc = L.socUI ?? L.uiSOC;
+    const t = app.trip, soc = L.socUI ?? L.uiSOC, chg = (app.chg = live ? chargeNow() : null);
     const packT = L.packTminC != null ? `${fx(U.temp(L.packTminC))}–${fx(U.temp(L.packTmaxC))}` : null;
     // charge (power is on the flow bar below it)
-    set("kSoc", fx(soc), "%"); $("kSoc").dataset.tone = soc == null ? "" : soc < 10 ? "bad" : soc < 20 ? "warn" : "";
-    $("kSocSub").textContent = [L.energyRemainingKWh != null && `${fx(L.energyRemainingKWh, 1)} kWh left`, packT && `pack ${packT}${U.t}`].filter(Boolean).join(" · ") || "waiting for the car";
+    set("kSoc", fx(soc), "%"); setTone("kSoc", soc == null ? "" : soc < 10 ? "bad" : soc < 20 ? "warn" : "");
+    txt("kSocSub", chg ? [`Charging ${kwTxt(chg.kw)} kW`, chgEta(chg)].filter(Boolean).join(" · ") : [L.energyRemainingKWh != null && `${fx(L.energyRemainingKWh, 1)} kWh left`, packT && `pack ${packT}${U.t}`].filter(Boolean).join(" · ") || "waiting for the car");
     // consumption
     const tripMi = t ? t.lastOdo - t.odo0 : 0, tripAvg = t && tripMi > 0.3 ? (t.drive * 1000) / tripMi : null;
     const wAvg = windowAvg(t, U.toMi(cfg.win));
-    set("avg", fx(U.wh(wAvg)), U.e); $("avgLabel").textContent = `Avg · last ${cfg.win} ${U.d}`;
+    set("avg", fx(U.wh(wAvg)), U.e); txt("avgLabel", `Avg · last ${cfg.win} ${U.d}`);
     const rated = ratedWh();
     const vsRated = r => (r <= 1 ? `${Math.round((1 - r) * 100)}% under rated` : `${Math.round((r - 1) * 100)}% over rated`);
-    $("avgSub").textContent = wAvg && rated ? `${vsRated(wAvg / rated)} (${Math.round(U.wh(rated))} ${U.e})` : rated ? `rated ${Math.round(U.wh(rated))} ${U.e}` : "builds as you drive";
+    txt("avgSub", wAvg && rated ? `${vsRated(wAvg / rated)} (${Math.round(U.wh(rated))} ${U.e})` : rated ? `rated ${Math.round(U.wh(rated))} ${U.e}` : "builds as you drive");
     const usable = L.energyRemainingKWh != null ? Math.max(0, L.energyRemainingKWh - (L.bufferKWh ?? 0)) : null;
     const basis = wAvg ?? tripAvg;
     set("proj", fx(U.dist(usable != null && basis > 50 ? (usable * 1000) / basis : L.ratedRangeMi)), U.d);
-    $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(U.wh(basis))} ${U.e} · rated ${fx(U.dist(L.ratedRangeMi))} ${U.d}` : "rated range";
+    txt("projSub", usable != null && basis > 50 ? `at ${Math.round(U.wh(basis))} ${U.e} · rated ${fx(U.dist(L.ratedRangeMi))} ${U.d}` : "rated range");
     // Under the chart, as the car's Energy app does: the window's average and the range it projects.
-    $("chartSub").textContent = usable != null && wAvg > 50 ? `Avg ${Math.round(U.wh(wAvg))} ${U.e} over the last ${cfg.win} ${U.d} · projected ${fx(U.dist((usable * 1000) / wAvg))} ${U.d}` : "Rolling average against rated";
+    txt("chartSub", usable != null && wAvg > 50 ? `Avg ${Math.round(U.wh(wAvg))} ${U.e} over the last ${cfg.win} ${U.d} · projected ${fx(U.dist((usable * 1000) / wAvg))} ${U.d}` : "Rolling average against rated");
     renderGuide(usable, basis);
     app.hs = healthNow();
     renderGauge(live, tripAvg);
     renderScore(tripMi, tripAvg);
     // battery
-    $("battFill").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`; $("battPct").textContent = soc != null ? `${fx(soc, 1)}%` : "—";
-    set("eRem", fx(L.energyRemainingKWh, 1), "kWh"); set("eFull", fx(L.fullPackKWh, 1), "kWh");
+    $("battFill").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`; txt("battPct", soc != null ? `${fx(soc, 1)}%` : "—");
+    set("eRem", fx(L.energyRemainingKWh, 1), "kWh"); set("eFull", L.fullEst && L.fullPackKWh ? `~${fx(L.fullPackKWh, 1)}` : fx(L.fullPackKWh, 1), "kWh");
     set("eBuf", fx(L.bufferKWh, 1), "kWh"); set("pv", fx(L.packV, 1), "V"); set("pa", fx(L.packA, 1), "A");
-    $("pt").innerHTML = packT ? `${packT}<small>${U.t}</small>` : "—";
+    html("pt", packT ? `${packT}<small>${U.t}</small>` : "—");
     set("bRegen", fx(L.maxRegenKW), "kW"); set("bRange", fx(U.dist(L.ratedRangeMi)), U.d);
-    $("topSoc").textContent = soc != null ? `${fx(soc)}%` : "—";
-    $("topTemp").textContent = packT ? `${packT}${U.t}` : "—";
+    txt("topSoc", soc != null ? `${fx(soc)}%` : "—");
+    txt("topTemp", packT ? `${packT}${U.t}` : "—");
     // trip
     set("tMi", fx(U.dist(tripMi), 1), U.d); set("tAvg", fx(U.wh(tripAvg)), U.e);
     const tot = t ? t.drive + t.park : 0;
-    $("tDrive").textContent = t ? `${fx(t.drive, 2)} kWh` : "—";
-    $("tPark").textContent = t ? `${fx(t.park, 2)} kWh` : "—";
-    $("tRegen").textContent = t ? `${fx(t.regen, 2)} kWh` : "—";
-    $("tChg").textContent = t && t.charged > 0.01 ? `${fx(t.charged, 2)} kWh` : "—";
-    $("tSince").textContent = t ? `since ${new Date(t.t0).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
+    txt("tDrive", t ? `${fx(t.drive, 2)} kWh` : "—");
+    txt("tPark", t ? `${fx(t.park, 2)} kWh` : "—");
+    txt("tRegen", t ? `${fx(t.regen, 2)} kWh` : "—");
+    txt("tChg", t && t.charged > 0.01 ? `${fx(t.charged, 2)} kWh` : "—");
+    txt("tSince", t ? `since ${new Date(t.t0).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "");
     const bars = $("split").children;
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
     // Slower-changing panels redraw once a second (or immediately on an explicit refresh) to keep the phone cool,
@@ -352,44 +370,43 @@
     }
     renderCoach(live, slow);
     // footer
-    $("fps").textContent = app.source ? `${app.fps} frames/s` : "";
-    $("recBtn").textContent = app.rec ? `Stop recording (${app.rec.rows.length - 1} rows)` : "Record CSV";
-    $("dlBtn").hidden = !(app.rec && app.rec.rows.length > 1) && !app.lastCsv;
+    txt("fps", app.source ? `${app.fps} frames/s` : "");
+    txt("recBtn", app.rec ? `Stop recording (${app.rec.rows.length - 1} rows)` : "Record CSV");
+    hide("dlBtn", !(app.rec && app.rec.rows.length > 1) && !app.lastCsv);
     if (cfg.tab === "trip" && performance.now() - lastChart > 900) { lastChart = performance.now(); drawChart(t); }
   }
 
   function renderCoach(live, slow) {
     const C = app.coach, st = C.state, mph = L.speedMph ?? 0, pedal = L.pedalPct, zone = st.zone;
     $("pedalFill").style.width = `${pedal ?? 0}%`;
-    $("pedalFill").dataset.zone = pedal == null ? "" : zone || "";
-    $("pedalPct").textContent = pedal == null ? "—" : `${Math.round(pedal)}%`;
-    $("pedalZone").textContent = pedal == null ? "" : ({ OFF: (app.pEma ?? 0) < -1 ? `regen ${Math.round(-app.pEma)} kW` : "off", LIGHT: "light", RIGHT: "in range", TOO_MUCH: "too much" })[zone] || "";
-    $("brakePill").dataset.on = String(L.brakeOn === true);
-    const tip = $("tip"), tip2 = $("tip2");
-    tip2.textContent = "";
-    if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; app.saidKind = null; }
+    data("pedalFill", "zone", pedal == null ? "" : zone || "");
+    txt("pedalPct", pedal == null ? "—" : `${Math.round(pedal)}%`);
+    txt("pedalZone", pedal == null ? "" : ({ OFF: (app.pEma ?? 0) < -1 ? `regen ${Math.round(-app.pEma)} kW` : "off", LIGHT: "light", RIGHT: "in range", TOO_MUCH: "too much" })[zone] || "");
+    data("brakePill", "on", L.brakeOn === true);
+    let t1 = null, t1Tone = "", t2 = "";                    // the banner's two lines, written once at the end
+    if (!app.source || !live) { t1 = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; t1Tone = "idle"; app.saidKind = null; }
     else if (st.headline) {
-      tip.textContent = st.headline.text;
+      t1 = st.headline.text;
       // Screen readers hear a tip once when it changes, not on every live-number refresh (4× a second).
-      if (app.saidKind !== st.headline.kind) { app.saidKind = st.headline.kind; $("tipSay").textContent = st.headline.text; }
-      tip.dataset.tone = st.headline.kind === "parked" || st.headline.kind === "stopped" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
-      tip2.textContent = st.second ? st.second.text                // held like the headline (coach.js), so it doesn't flicker
+      if (app.saidKind !== st.headline.kind) { app.saidKind = st.headline.kind; txt("tipSay", st.headline.text); }
+      t1Tone = st.headline.kind === "parked" || st.headline.kind === "stopped" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
+      t2 = st.second ? st.second.text                // held like the headline (coach.js), so it doesn't flicker
         : app.source === "tessie" && !inCar && st.headline.kind !== "parked" ? "Pedal and brake coaching need the adapter." : "";
     }
     const sc = C.score();
     set("cScore", sc == null ? "—" : String(sc), sc == null ? "" : "%");
-    $("cScore").dataset.tone = sc == null ? "" : sc >= 75 ? "good" : sc >= 50 ? "warn" : "bad";
-    $("cHard").textContent = String(st.heavyEvents); $("cBrake").textContent = String(st.frictionEvents);
+    setTone("cScore", sc == null ? "" : sc >= 75 ? "good" : sc >= 50 ? "warn" : "bad");
+    txt("cHard", String(st.heavyEvents)); txt("cBrake", String(st.frictionEvents));
     set("cGrade", L.gradePct == null ? "—" : `${L.gradePct > 0 ? "+" : ""}${L.gradePct}`, L.gradePct == null ? "" : "%");
     $("cruiseBtn").setAttribute("aria-pressed", String(st.cruiseOn));
-    $("cruiseBtn").hidden = !live || !app.source || app.source === "tessie";   // only means something with live pedal data
+    hide("cruiseBtn", !live || !app.source || app.source === "tessie");   // only means something with live pedal data
     const avgCap = stops.avg(), ls = stops.state.last;
     set("cCap", avgCap == null ? "—" : String(avgCap), avgCap == null ? "" : "%");
-    $("cCap").dataset.tone = avgCap == null ? "" : Stops.grade(avgCap);
-    $("cCapSub").textContent = ls ? `last: ${Math.round(U.speed(ls.v0))}→${Math.round(U.speed(ls.v1))} ${U.s}, ${ls.pct}%${ls.braked ? " (brake used)" : ""}` : `slowdowns from ${Math.round(U.speed(15))}+ ${U.s}`;
+    setTone("cCap", avgCap == null ? "" : Stops.grade(avgCap));
+    txt("cCapSub", ls ? `last: ${Math.round(U.speed(ls.v0))}→${Math.round(U.speed(ls.v1))} ${U.s}, ${ls.pct}%${ls.braked ? " (brake used)" : ""}` : `slowdowns from ${Math.round(U.speed(15))}+ ${U.s}`);
     // Right after a slowdown, show its result in the second coaching line for 8 s.
     if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 && app.source)   // 8 real seconds, Demo too
-      $("tip2").textContent = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
+      t2 = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
     // Health test prep takes over the banner: where to turn around, then how far is left to the target.
     if (cfg.health && app.source && live) {
       const h = cfg.health, s = app.hs, p = app.pEma;
@@ -398,14 +415,16 @@
         : h.phase === "back" ? `Head home · ${fx(U.dist(s.left), 1)} ${U.d}${dot(eta(s.left))} of driving left until ${h.target}%.`
         : s.turnIn <= 0.2 ? "Turn around now and head home."
         : `${Math.round(s.raw)}% → ${h.target}% · turn around in ${fx(U.dist(s.turnIn), 1)} ${U.d}${dot(eta(s.turnIn))}.`;
-      tip.textContent = text; tip.dataset.tone = h.phase === "done" ? "good" : "warn";
-      tip2.textContent = s && p > 0.3 && h.phase !== "done" ? `Using ${fx(p, 1)} kW · about ${Math.round(p / s.k)}% an hour${h.burn && h.burn.did.length ? " · climate boosted" : ""}` : "";
+      t1 = text; t1Tone = h.phase === "done" ? "good" : "warn";
+      t2 = s && p > 0.3 && h.phase !== "done" ? `Using ${fx(p, 1)} kW · about ${Math.round(p / s.k)}% an hour${h.burn && h.burn.did.length ? " · climate boosted" : ""}` : "";
       const kind = `health.${h.phase}.${s && s.turnIn <= 0.2 ? 1 : 0}`;
-      if (app.saidKind !== kind) { app.saidKind = kind; $("tipSay").textContent = text; }
+      if (app.saidKind !== kind) { app.saidKind = kind; txt("tipSay", text); }
     }
+    if (t1 != null) { txt("tip", t1); setTone("tip", t1Tone); }
+    txt("tip2", t2);
     if (slow || cfg.tab !== "trip") return;                // the speed curve lives on the Trip tab
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
-    $("tempBand").textContent = band === "x" ? "" : `at ${U.tempBand(band)} outside`;
+    txt("tempBand", band === "x" ? "" : `at ${U.tempBand(band)} outside`);
     if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above ${Math.round(U.speed(20))} ${U.s}. Each ${Math.round(U.speed(5))}-${U.s} band needs about ${U.metric ? "0.8 km" : "half a mile"}${band === "x" ? "" : " at this outside temperature"}.</p>`; return; }
     // Speed curve: your Wh/mi at each 5-mph band (points at band centers), sweet spot highlighted, your speed marked,
     // and what a full usable pack would reach at each band. Drawn in the units picked in Setup.
@@ -621,10 +640,16 @@
       L.gear = ds.shift_state || (ds.speed ? null : "P");    // no shift state while it sits (or sleeps): parked
       L.outsideC = typeof (st.climate_state || {}).outside_temp === "number" ? st.climate_state.outside_temp : null;
       if (typeof vs.odometer === "number") L.odoMi = vs.odometer;
-      L.energyRemainingKWh = bat.energy_remaining; L.fullPackKWh = bat.nominal_full_pack_energy; L.bufferKWh = null;
+      // No full-pack figure on some cars: estimate it from what's left and the charge (20%+, so a step is a small error).
+      L.fullEst = bat.nominal_full_pack_energy == null;
+      L.energyRemainingKWh = bat.energy_remaining; L.bufferKWh = null;
+      L.fullPackKWh = !L.fullEst ? bat.nominal_full_pack_energy : bat.battery_level >= 20 && bat.energy_remaining > 0 ? bat.energy_remaining / (bat.battery_level / 100) : null;
       L.socUI = bat.battery_level; L.ratedRangeMi = bat.battery_range;
       L.packTminC = bat.module_temp_min; L.packTmaxC = bat.module_temp_max;
       if (cs.charge_limit_soc != null) L.chargeLimit = cs.charge_limit_soc;
+      L.charging = cs.charging_state === "Charging" || cs.charging_state === "Starting";
+      L.chargeKW = typeof cs.charger_power === "number" ? cs.charger_power : null;
+      L.chargeH = typeof cs.time_to_full_charge === "number" ? cs.time_to_full_charge : null;
       // Trip energy from the drop in energy remaining (0.01 kWh steps): out − in = 1000 − remaining.
       L.totalOutKWh = 1000 - bat.energy_remaining; L.totalInKWh = 0;
 
@@ -715,7 +740,7 @@
   }
 
   function renderGuide(usable, basis) {
-    const tg = app.tgt, set2 = (id, text, tone) => { $(id + "V").textContent = text; $(id).dataset.tone = tone || ""; };
+    const tg = app.tgt, set2 = (id, text, tone) => { txt(id + "V", text); setTone(id, tone); };
     // 1. Range vs the car's own rated estimate, at your current pace.
     if (usable != null && basis > 50 && L.ratedRangeMi > 0) {
       const d = (usable * 1000) / basis - L.ratedRangeMi;
@@ -734,25 +759,25 @@
       const pace = basis > 50 ? basis : tg && tg.whTarget ? tg.whTarget : ratedWh();
       const moving = tg && tg.mph > 3, cw = L.compressorKW, out = L.outsideC != null ? Math.round(U.temp(L.outsideC)) : null;
       if (!moving && app.pEma != null && app.pEma > 0.05 && app.source && pace) {
-        $("gClimL").textContent = "Parked draw";
+        txt("gClimL", "Parked draw");
         const mph = (app.pEma * 1000) / pace;
         set2("gClim", `${app.pEma.toFixed(1)} kW · −${U.dist(mph).toFixed(1)} ${U.d}/hr`, app.pEma > 1.5 ? "warn" : "");
       } else if (cw != null && pace) {
-        $("gClimL").textContent = `Climate${out != null ? ` · ${out}${U.t} out` : ""}`;
+        txt("gClimL", `Climate${out != null ? ` · ${out}${U.t} out` : ""}`);
         const mph = (cw * 1000) / pace;
         set2("gClim", cw < 0.15 ? `off · 0 ${U.d}/hr` : `${cw.toFixed(1)} kW · −${U.dist(mph).toFixed(1)} ${U.d}/hr`, cw > 3 ? "bad" : cw > 1.5 ? "warn" : "good");
-      } else { $("gClimL").textContent = `Climate${out != null ? ` · ${out}${U.t} out` : ""}`; set2("gClim", app.source === "tessie" && !inCar ? "needs the adapter" : "—", ""); }
+      } else { txt("gClimL", `Climate${out != null ? ` · ${out}${U.t} out` : ""}`); set2("gClim", app.source === "tessie" && !inCar ? "needs the adapter" : "—", ""); }
     }
     // 3. Range goal: energy budget per mile to arrive with the buffer intact.
     // A goal covers one stretch of driving: it clears itself a day after it was set. Set before the car was connected,
     // it counts from the first odometer reading.
     if (cfg.goal && Date.now() - cfg.goal.at > 864e5) { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); lastChart = 0; }
     const g = cfg.goal;
-    if (!g) { $("gGoalL").textContent = "Range goal"; set2("gGoal", "Set a goal", ""); return; }
+    if (!g) { txt("gGoalL", "Range goal"); set2("gGoal", "Set a goal", ""); return; }
     if (g.odo0 == null && L.odoMi != null) { g.odo0 = L.odoMi; store(KEY.cfg, cfg); }
     const done = L.odoMi != null && g.odo0 != null ? Math.max(0, L.odoMi - g.odo0) : 0;
     const left = Math.max(0, g.mi - done);
-    $("gGoalL").textContent = `Goal ${Math.round(U.dist(g.mi))} ${U.d} · ${U.dist(left).toFixed(1)} left`;
+    txt("gGoalL", `Goal ${Math.round(U.dist(g.mi))} ${U.d} · ${U.dist(left).toFixed(1)} left`);
     if (usable == null || left < 0.1) { set2("gGoal", left < 0.1 ? "Made it" : "waiting for battery data", left < 0.1 ? "good" : ""); return; }
     const budget = (usable * 1000) / left;
     app.budgetWh = budget;
@@ -787,11 +812,12 @@
      commands are ever sent, and Turn off undoes only what the app switched on. */
   const kwhPerPct = () => (L.fullPackKWh > 10 ? (L.fullPackKWh - (L.bufferKWh ?? 0)) / 100 : null);
   const healthOn = () => !!cfg.health && cfg.health.phase !== "done";
-  // Tessie reports whole percents. Between steps, follow energy remaining (0.01 kWh) so the countdown moves smoothly:
-  // just after a step down the charge is at the top of the new percent, and it can't go below the bottom of it.
+  // Some cars report whole percents through Tessie. Between steps, follow energy remaining (0.01 kWh) so the countdown
+  // moves smoothly: just after a step down the charge is at the top of the new percent, and it can't go below the bottom
+  // of it. A fractional reading (89.83) is already fine.
   function fineSoc() {
     const soc = L.socUI ?? L.uiSOC, e = L.energyRemainingKWh, k = kwhPerPct();
-    if (app.source !== "tessie" || soc == null || e == null || !k) return soc;
+    if (app.source !== "tessie" || soc == null || soc % 1 || e == null || !k) return soc;
     let a = app.socAnchor;
     if (!a || a.soc !== soc) a = app.socAnchor = { soc, e, top: a && soc < a.soc ? soc + 0.5 : soc };
     return Math.min(soc + 0.5, Math.max(soc - 0.5, a.top - (a.e - e) / k));
@@ -969,6 +995,10 @@
   function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) showTab("cockpit"); syncAwake(); }
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
   setDrive(!!cfg.drive);
+  // Drive view side by side on a phone on its side, and on the car's screen: wide, but too tall for that media query.
+  const sideMq = window.matchMedia ? matchMedia("(orientation:landscape) and (max-height:540px)") : null;
+  const setSide = () => document.body.classList.toggle("side", inCar || !!(sideMq && sideMq.matches));
+  setSide(); if (sideMq && sideMq.addEventListener) sideMq.addEventListener("change", setSide);
 
   /* ---------------- efficiency gauge + power flow ----------------
      Gauge: smoothed Wh/mi right now on a 240° arc. Green up to your target for this speed (your own
@@ -1013,22 +1043,22 @@
     const val = $("gVal");
     val.setAttribute("stroke-dasharray", `${v != null && v > 0 ? ((Math.min(G.max, v) / G.max) * ARC_LEN).toFixed(1) : 0} ${ARC_LEN}`);
     val.setAttribute("stroke", tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : "var(--regen)");
-    if (!live) { el.textContent = "—"; el.dataset.tone = ""; $("instSub").textContent = `${U.e} now`; st.textContent = app.source ? "Waiting for the car" : "Connect the car"; st.dataset.tone = ""; }
+    if (!live) { txt(el, "—"); setTone(el, ""); txt("instSub", `${U.e} now`); txt(st, app.source ? "Waiting for the car" : "Connect the car"); setTone(st, ""); }
     else if (!moving) {
-      const kw = app.pEma ?? 0;
-      const charging = kw < -0.3 && L.gear !== "D" && L.gear !== "R";
-      el.textContent = charging ? "Charging" : L.gear === "D" || L.gear === "R" ? "Stopped" : "Parked"; el.dataset.tone = "";
-      $("instSub").textContent = `${Math.abs(kw) < 10 ? Math.abs(kw).toFixed(1) : Math.round(Math.abs(kw))} kW ${kw < -0.3 ? (charging ? "in" : "regen") : "draw"}`;
-      st.textContent = "Not moving"; st.dataset.tone = "";
-    } else if (v < 0) { el.textContent = "Regen"; el.dataset.tone = "good"; $("instSub").textContent = `recovering ${Math.round(-app.pEma)} kW`; st.textContent = "Recovering energy"; st.dataset.tone = "good"; }
+      const c = app.chg, kw = app.pEma ?? 0;
+      const charging = !!c || (kw < -0.3 && L.gear !== "D" && L.gear !== "R");
+      txt(el, charging ? "Charging" : L.gear === "D" || L.gear === "R" ? "Stopped" : "Parked"); setTone(el, "");
+      txt("instSub", `${kwTxt(c ? c.kw : kw)} kW ${charging ? "in" : kw < -0.3 ? "regen" : "draw"}`);
+      txt(st, (c && chgEta(c)) || "Not moving"); setTone(st, "");
+    } else if (v < 0) { txt(el, "Regen"); setTone(el, "good"); txt("instSub", `recovering ${Math.round(-app.pEma)} kW`); txt(st, "Recovering energy"); setTone(st, "good"); }
     else {
-      el.textContent = String(Math.round(v)); el.dataset.tone = tone; $("instSub").textContent = `${U.e} now · ${Math.round(U.speed(mph))} ${U.s}`;
-      st.textContent = tone === "good" ? "Efficient" : tone === "warn" ? "A bit heavy" : tone === "bad" ? "Wasting range" : "Measuring";
-      st.dataset.tone = tone;
+      txt(el, String(Math.round(v))); setTone(el, tone); txt("instSub", `${U.e} now · ${Math.round(U.speed(mph))} ${U.s}`);
+      txt(st, tone === "good" ? "Efficient" : tone === "warn" ? "A bit heavy" : tone === "bad" ? "Wasting range" : "Measuring");
+      setTone(st, tone);
     }
-    if (healthOn() && st.dataset.tone) { st.textContent = "Health test prep"; st.dataset.tone = ""; }   // using energy is the point
-    el.dataset.word = String(!/^\d+$/.test(el.textContent));          // "Regen", "Parked"… set smaller than a number
-    $("effTarget").textContent = target ?`Target ${target} ${U.e}${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(U.wh(tripAvg))}` : ""}` : "";
+    if (healthOn() && st.dataset.tone) { txt(st, "Health test prep"); setTone(st, ""); }   // using energy is the point
+    const word = String(!/^\d+$/.test(el.textContent)); if (el.dataset.word !== word) el.dataset.word = word;          // "Regen", "Parked"… set smaller than a number
+    txt("effTarget", target ?`Target ${target} ${U.e}${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(U.wh(tripAvg))}` : ""}` : "");
   }
 
   // Mile by mile (or km by km): Wh/mi of each of the last 10 whole miles of this trip plus the one in progress, colored vs target.
@@ -1058,10 +1088,10 @@
   // 30% share of pedal time in the 15–40% range. Shown once the trip has half a mile.
   function renderScore(tripMi, tripAvg) {
     const rated = ratedWh(), el = $("effScore");
-    if (!(tripMi > 0.5) || !(tripAvg > 0) || !rated) { el.innerHTML = "—"; el.dataset.tone = ""; $("effScoreSub").textContent = `drive ${U.metric ? "1 km" : "half a mile"} to score`; return; }
+    if (!(tripMi > 0.5) || !(tripAvg > 0) || !rated) { html(el, "—"); setTone(el, ""); txt("effScoreSub", `drive ${U.metric ? "1 km" : "half a mile"} to score`); return; }
     const r = tripAvg / rated, pedal = app.coach.score(), sc = Drives.score(tripAvg, rated, pedal);   // same formula as drive summaries
-    el.innerHTML = `${sc}<small>/100</small>`; el.dataset.tone = sc >= 80 ? "good" : sc >= 60 ? "warn" : "bad";
-    $("effScoreSub").textContent = `${r <= 1 ? Math.round((1 - r) * 100) + "% under" : Math.round((r - 1) * 100) + "% over"} rated ${U.e}${pedal != null ? ` · pedal ${pedal}% in range` : ""}`;
+    html(el, `${sc}<small>/100</small>`); setTone(el, sc >= 80 ? "good" : sc >= 60 ? "warn" : "bad");
+    txt("effScoreSub", `${r <= 1 ? Math.round((1 - r) * 100) + "% under" : Math.round((r - 1) * 100) + "% over"} rated ${U.e}${pedal != null ? ` · pedal ${pedal}% in range` : ""}`);
   }
 
   // Power flow bar: zero sits at 28% so the "using" side gets more room. √ scale so cruising is visible.
@@ -1085,22 +1115,22 @@
     const v = flow.v, tg = app.tgt, moving = live && tg && tg.mph > 3;
     $("fUse").style.transform = `scaleX(${v > 0 ? fFrac(v, up, dn) : 0})`;
     $("fRegen").style.transform = `scaleX(${v < 0 ? fFrac(v, up, dn) : 0})`;
-    const zu = $("fZoneU"), zr = $("fZoneR"); zu.hidden = zr.hidden = !moving;
+    const zu = $("fZoneU"), zr = $("fZoneR"); if (zu.hidden !== !moving) zu.hidden = zr.hidden = !moving;
     if (moving) {
       zu.style.left = `${FZ}%`; zu.style.width = `${fPos(tg.upKW, up, dn) - FZ}%`;
       const l = fPos(-tg.regenGentle, up, dn); zr.style.left = `${l}%`; zr.style.width = `${FZ - l}%`;
     }
     // The car's regen limit (lower when the pack is cold or nearly full), when it's inside the bar's scale.
     const lim = L.maxRegenKW > 1 && L.maxRegenKW < dn ? Math.round(L.maxRegenKW) : null, fl = $("fLimit");
-    fl.hidden = lim == null; if (lim != null) fl.style.left = `${fPos(-lim, up, dn)}%`;
-    const rl = lim == null ? "◀ Regen" : `◀ Regen · max ${lim} kW`; if ($("fRegenLbl").textContent !== rl) $("fRegenLbl").textContent = rl;
+    if (fl.hidden !== (lim == null)) fl.hidden = lim == null; if (lim != null) fl.style.left = `${fPos(-lim, up, dn)}%`;
+    const rl = lim == null ? "◀ Regen" : `◀ Regen · max ${lim} kW`; txt("fRegenLbl", rl);
     const useTone = !moving ? "" : v <= tg.upKW ? "ok" : v <= tg.upKW * 1.8 ? "" : "way", hard = moving && -v > tg.regenGentle;
-    $("fUse").dataset.tone = useTone; $("fRegen").dataset.tone = hard ? "hard" : "";
+    setTone("fUse", useTone); setTone("fRegen", hard ? "hard" : "");
     const kw = `${Math.abs(v) < 10 ? Math.abs(v).toFixed(1) : Math.round(Math.abs(v))} kW`;
-    $("flowState").textContent = !live || L.powerKW == null ? "—"
+    txt("flowState", !live || L.powerKW == null ? "—"
       : v < -0.5 ? (hard ? `${kw} regen · strong, lift earlier` : `${kw} regen`)
       : !moving ? `${kw} ${v > 0.3 ? "draw" : ""}`.trim()
-      : useTone === "ok" ? `${kw} · efficient` : useTone === "way" ? `${kw} · hard acceleration` : `${kw} · above efficient`;
+      : useTone === "ok" ? `${kw} · efficient` : useTone === "way" ? `${kw} · hard acceleration` : `${kw} · above efficient`);
   }
   document.documentElement.style.setProperty("--z", `${FZ}%`);
   requestAnimationFrame(flowFrame);
@@ -1154,7 +1184,7 @@
         ${cell(U.e, Math.round(U.wh(d.wh)), d.rated ? `rated ${Math.round(U.wh(d.rated))}` : "")}
         ${cell("vs rated", d.vsRatedPct == null ? "—" : `${d.vsRatedPct > 0 ? "+" : ""}${d.vsRatedPct}%`, d.vsRatedPct == null ? "" : d.vsRatedPct <= 0 ? "used less" : "used more")}
         ${cell("Range vs rated", d.rangeDeltaMi == null ? "—" : `${signed(U.dist(d.rangeDeltaMi))} ${U.d}`, "on this drive")}
-        ${cell("Energy", `${d.kwh.toFixed(2)} kWh`, `${d.regenKWh.toFixed(2)} kWh back from regen`)}
+        ${cell("Energy", `${d.kwh.toFixed(2)} kWh`, d.regenKWh == null ? "regen needs the adapter" : `${d.regenKWh.toFixed(2)} kWh back from regen`)}
         ${cell("Pedal in range", d.pedalPct == null ? "—" : `${d.pedalPct}%`, `${d.heavy} heavy · ${d.friction} brake-heavy stops`)}
         ${cell("Slowdown capture", d.capturePct == null ? "—" : `${d.capturePct}%`, d.stops ? `${d.stops} slowdowns · 60%+ is great` : "")}
         ${cell("Speeding up", d.accelKWh != null && d.accelKWh + d.cruiseKWh > 0 ? `${Math.round((d.accelKWh / (d.accelKWh + d.cruiseKWh)) * 100)}%` : "—", "of driving energy")}
@@ -1223,7 +1253,7 @@
   $("endDrive").addEventListener("click", () => {
     if (!app.trip) return;
     const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
-    const d = drives.finish({ odo: L.odoMi ?? app.synthOdo, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen, climateKWh: L.compressorKW != null ? app.climateKWh : null,
+    const d = drives.finish({ odo: L.odoMi ?? app.synthOdo, drive: app.trip.drive, park: app.trip.park, regen: app.source === "tessie" ? null : app.trip.regen, climateKWh: L.compressorKW != null ? app.climateKWh : null,
       accelKWh: app.trip.eb ? app.trip.eb.accel : 0, cruiseKWh: app.trip.eb ? app.trip.eb.cruise : 0,
       stopKinetic: stops.state.kinetic, stopRegen: stops.state.regen, stopCount: stops.state.n,
       heavy: st.heavyEvents, friction: st.frictionEvents, pressedSec: st.pressedSec, rightSec: st.rightSec, rated: ratedWh(), sweetBand: sw ? sw.mph : null, outsideC: L.outsideC, demo: app.source === "demo" }, Date.now());
@@ -1329,7 +1359,7 @@
   const SETTINGS = {
     win: v => [5, 15, 30].includes(v), brick: v => Number.isInteger(v) && v >= 0 && v <= 108, oneBased: v => typeof v === "boolean",
     keepAwake: v => typeof v === "boolean", autoConnect: v => typeof v === "boolean", alerts: v => ["off", "vibrate", "sound", "both"].includes(v),
-    healthTarget: v => [10, 15, 20, 25, 30].includes(v), units: v => ["mi", "km"].includes(v),
+    healthTarget: v => [10, 15, 20, 25, 30].includes(v), units: v => ["mi", "km"].includes(v), theme: v => ["auto", "dark", "light"].includes(v),
     plan: v => !!v && typeof v.mi === "number" && v.mi > 0.5 && v.mi <= 400 && [10, 15, 20, 30].includes(v.res),     // miles, from km too
   };
   $("exportBtn").addEventListener("click", () => {
@@ -1431,6 +1461,10 @@
     $("legendAvg").textContent = `Rolling 1-${U.unit} average (${U.e})`;
     $("effGauge").setAttribute("aria-label", `Efficiency gauge: watt-hours per ${U.metric ? "kilometer" : "mile"} now against your target`);
   }
+  // The car's screen defaults to dark: a light page is glaring at night, and its browser may not say which it prefers.
+  const applyTheme = () => { const t = cfg.theme || (inCar ? "dark" : "auto"); if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; return t; };
+  $("cfgTheme").value = applyTheme();
+  $("cfgTheme").addEventListener("change", e => { cfg.theme = e.target.value; store(KEY.cfg, cfg); applyTheme(); });
   $("cfgUnits").value = U.metric ? "km" : "mi";
   $("cfgUnits").addEventListener("change", e => { cfg.units = e.target.value; store(KEY.cfg, cfg); U.set(cfg.units); applyUnits(); renderDrives(); app.forceSlow = true; lastChart = 0; render(!!app.source); });
   applyUnits();

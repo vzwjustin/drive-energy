@@ -42,9 +42,11 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 - **Trip:** this trip and where its energy went (with the range each part cost), the consumption chart (with the window's average and projected range above it), drive history, your speed curve, and **Parked** (below).
 - **Battery:** charge and pack readings (including the regen limit and rated range), the charge plan, and a heatmap of all 108 bricks.
 - **Health:** prep for the car's battery health test: use the charge down to a target on an out-and-back drive.
-- **Setup:** adapter and screen options, alerts, units, Tessie, backup, CSV recording and diagnostics.
+- **Setup:** adapter and screen options, alerts, units, theme, Tessie, backup, CSV recording and diagnostics.
 
 **Units (Setup):** Miles (mph, Wh/mi, °F) or Kilometers (km/h, Wh/km, °C). The choice applies to every distance, speed, consumption and temperature on screen, including the coach's tips and drive summaries. Saved data stays in miles, so switching back and forth loses nothing. Distances you type, such as the range goal and the charge plan, are taken in the unit shown. The speed curve keeps its 5-mph bands and shows them in km/h (for example 97–104 km/h). CSV recordings keep their mph and mi columns.
+
+**Theme (Setup):** Match the system (light or dark with the phone), Dark, or Light. The car's screen starts dark, since a light page glares at night.
 
 ## Efficiency gauge (Cockpit)
 
@@ -56,6 +58,7 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
   - 70% is consumption vs rated: 100 at 15% or more under rated Wh/mi, 0 at 50% or more over.
   - 30% is the share of pedal time spent in the 15–40% range.
 - **Tiles:** trip score, range at this pace, average over the last 5/15/30 mi, and charge: % with kWh left and pack temperature. The charge tile is also how Drive view shows the charge.
+- **Charging:** the charge tile shows the power going in and when the charge limit will be reached ("Charging 7.0 kW · 80% in 1 h 30 min"), and the gauge reads Charging with the same time. Tessie reports these; from the adapter they're worked out from the energy still to add, so they're marked ~.
 - **Power flow bar:** regen to the left of zero, power used to the right, with green "efficient" zones on both sides. The label states it in words, for example "12 kW · efficient" or "35 kW regen · strong, lift earlier".
   - When the car limits regen (cold or nearly full pack), a dashed amber line marks the limit and the label reads "Regen · max 25 kW".
 
@@ -76,7 +79,7 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 Gets the charge down to a target (20% by default) on an out-and-back drive from home, so you arrive home ready for the car's battery health test.
 
 - **Plan:** from your current charge, the kWh to use and the round-trip miles at your usual Wh/mi (same basis as the charge plan), so you know how far to drive out.
-- **Start from home**, then drive. After 2 mi the app uses this drive's own Wh/mi. Tessie reports whole percents, so between steps the countdown follows the remaining kWh.
+- **Start from home**, then drive. After 2 mi the app uses this drive's own Wh/mi. Some cars report whole percents through Tessie, so between steps the countdown follows the remaining kWh; a reading with decimals is used as is.
   - On the way out, the Cockpit coach shows "66% → 20% · turn around in 12.4 mi · ~14 min". It's time to turn when what's left above the target only just covers the drive back on the same road.
   - Then "Head home · 18.0 mi · ~20 min of driving left until 20%". This doesn't need to know which way you're driving, so turning late just means arriving a little lower.
   - The time is at this outing's pace: your average speed over the last few minutes, stops included. It appears once the car is moving, and the Health tab shows it as **Time at this pace**.
@@ -104,6 +107,8 @@ Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**,
 | Long low tone / long buzz | Pack warning: cold pack under high draw, hot pack, or low charge under high draw |
 | Three rising tones / three buzzes | Health test prep: turn around now, or the target is reached. These two always alert while a prep runs, with sound and vibration when alerts are off |
 
+In Tessie mode only the pack warnings can fire: the others need the adapter's pedal and brake data.
+
 Tap **Test alert** once to allow sound (browsers require a tap before audio).
 
 ## Max-range guide
@@ -118,7 +123,7 @@ Everything below is driven by **your car's own steady-cruise data** (the coach's
 - **Range vs rated:** projected range at your pace minus the car's rated range. Positive means you're beating the car's estimate.
 - **Best speed:** your most efficient 5-mph band, plus how many miles slowing to it would add right now.
 - **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart. Miles count from the first odometer reading after you set it, and the goal clears itself after a day.
-- **Drive view** (header button): shows only the Cockpit with a compact header and larger numbers, and keeps the screen on. On a phone mounted sideways the gauge sits on the left and the tip, tiles, power bar and accelerator stack on the right, so nothing important is below the fold.
+- **Drive view** (header button): shows only the Cockpit with a compact header and larger numbers, and keeps the screen on. On a phone mounted sideways, and on the car's screen, the gauge sits on the left and the tip, tiles, power bar and accelerator stack on the right, so nothing important is below the fold. The car's screen gets bigger numbers. The screen only rewrites readings that changed.
 
 ## Range coach
 
@@ -147,7 +152,8 @@ Tap **Start Tessie** (Setup tab) to run the same screen from Tessie's cloud inst
 
 - Paste your Tessie API token under **Setup → Tessie API token**. It's stored in that phone's browser only, so never put it in the repo; GitHub Pages repos are public.
 - Tessie mode never wakes the car (`use_cache=true`). When the car sleeps, the chip shows how old the last reading is.
-- Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter.
+- Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter. Drive summaries say regen needs the adapter rather than showing 0 kWh.
+- When Tessie doesn't send the pack's full-charge energy, it's estimated from energy remaining and the charge (from 20% up; shown with ~ on the Battery tab), so the charge plan and health test prep still work.
 - Tessie also gives the gear and outside temperature, so drives are scored and summarized in Tessie mode too (without the pedal, slowdown and climate parts), Parked vs Stopped reads right, and the speed table follows the outside temperature.
 - Picking another car or pasting a new token forgets the car looked up before, so climate commands and the Parked card go to the car picked.
 - Tessie mode keeps its own trip, separate from the adapter's.
@@ -167,7 +173,7 @@ Open the same address in the car's browser. It has no Web Serial or Bluetooth, s
 
 - Tessie starts on its own when the page opens. The first time, it opens Setup for the token (the car's browser keeps its own storage, separate from the phone's). **Connect car** then means Tessie.
 - Hidden there, since they need the adapter: the accelerator card, where the energy went, the speed curve, the brick heatmap, and the adapter settings. Drives are scored from Tessie and kept in the car's browser.
-- Buttons and tabs get bigger touch targets.
+- Buttons and tabs get bigger touch targets. Dark by default (**Setup → Theme** to change), and Drive view goes side by side.
 - Not yet checked on a real car: whether this firmware's browser runs the page (it needs a recent Chromium) and whether it stays usable while driving.
 
 ## Auto-connect (v21)

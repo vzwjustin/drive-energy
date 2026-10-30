@@ -10,7 +10,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock = null, idb = null, ua = "", vibrate = null } = {}) {
   const els = {}, timers = [], docOn = {}, files = [];
   let reloads = 0;
-  const el = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {} }, children: [{ style: {} }, { style: {} }],
+  const el = () => ({ dataset: {}, style: { setProperty() {} }, classList: { s: new Set(), toggle(c, on = !this.s.has(c)) { this.s[on ? "add" : "delete"](c); return on; }, contains(c) { return this.s.has(c); } }, children: [{ style: {} }, { style: {} }],
     textContent: "", innerHTML: "", hidden: false, value: "", checked: false, open: false, clientWidth: 0, clientHeight: 0, on: {},
     addEventListener(t, f) { this.on[t] = f; }, showModal() { this.open = true; }, close() { this.open = false; }, setAttribute() {}, focus() {}, scrollIntoView() {}, replaceChildren() {}, appendChild() {}, querySelector: () => null, querySelectorAll: () => [], click() {}, remove() {} });
   const store = storage instanceof Map ? storage : new Map(Object.entries(storage).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
@@ -73,10 +73,10 @@ function fakeSerial(...ports) {
   return { ports, getPorts: async () => ports.filter(p => !p.forgotten), requestPort: async () => ports[ports.length - 1], addEventListener() {} };
 }
 
-// car: readings a test can change between polls; car.idles is the parked-stretch log. Commands (POSTs) are recorded in cmds; one named in refuse gets
+// car: readings a test can change between polls (full: null leaves out the full-pack figure); car.idles is the parked-stretch log. Commands (POSTs) are recorded in cmds; one named in refuse gets
 // { result: false, reason } back, the rest succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false, speed: 0, gear: null, idles: [] };
+  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, full: 75, outside: 25, setC: 21, climateOn: false, speed: 0, gear: null, power: 0, charge: {}, idles: [] };
   const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
@@ -86,8 +86,8 @@ function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
     }
     const body = /vehicles/.test(url) ? { results: cars }
       : /idles/.test(url) ? { results: car.idles }
-      : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, nominal_full_pack_energy: 75, battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
-      : { state: "online", drive_state: { power: 0, speed: car.speed, shift_state: car.gear }, vehicle_state: { odometer: car.odometer }, charge_state: {},
+      : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, ...(car.full != null && { nominal_full_pack_energy: car.full }), battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
+      : { state: "online", drive_state: { power: car.power, speed: car.speed, shift_state: car.gear }, vehicle_state: { odometer: car.odometer }, charge_state: car.charge,
           climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
     return { ok: true, status: 200, json: async () => body };
   };
@@ -530,6 +530,7 @@ const test = async (name, fn) => {
     const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20, ua });
     await wait(300);
     assert.ok(/^Tessie · /.test(app.text("chipText")), "chip " + app.text("chipText"));
+    assert.ok(app.document.body.classList.contains("car") && app.document.body.classList.contains("side"), "Drive view side by side on the wide screen");
     assert.strictEqual(app.el("connectBtn").hidden, true, "nothing to connect while Tessie runs");
     app.click("disconnectBtn"); await wait(50);
     assert.strictEqual(app.el("connectBtn").hidden, false);
@@ -566,6 +567,8 @@ const test = async (name, fn) => {
     app.click("endDrive"); await wait(50);
     const d = (JSON.parse(app.store.get("de.drives.v1") || "[]"))[0];
     assert.ok(d && d.mi >= 4 && Math.round(d.wh) === 250 && d.score != null, JSON.stringify(d));
+    assert.strictEqual(d.regenKWh, null, "Tessie's 10 s energy readings can't separate regen");
+    assert.ok(/regen needs the adapter/.test(app.html("sumBody")), "summary: " + app.html("sumBody"));
     assert.strictEqual(app.store.get("de.speed.v1"), undefined, "Tessie's readings don't teach the speed table");
     app.stop();
   });
@@ -578,6 +581,59 @@ const test = async (name, fn) => {
     assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).health.phase, "done");
     assert.strictEqual(JSON.stringify(buzz), "[[150,80,150,80,300]]", "the turn pattern, once");
     app.stop();
+  });
+
+  await test("Tessie: a fractional charge is used as is, and a missing full-pack figure is estimated", async () => {
+    const tes = fakeTessie(), drives = [{ id: "1", t0: 1, mi: 40, kwh: 10, wh: 250, score: 80 }, { id: "2", t0: 2, mi: 40, kwh: 10, wh: 250, score: 80 }];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300); app.click("hStart");
+    // 62.4% (not taken as 62.9%): 31.8 kWh above 20% = 127.2 mi at 250 Wh/mi; turn around in (127.2 − 10) / 2 = 58.6 mi.
+    Object.assign(tes.car, { odometer: 10010, energy: 47.5, level: 62.4 }); await wait(1300);
+    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 58.6 mi.");
+    app.stop();
+    const tes2 = fakeTessie(); tes2.car.full = null;
+    const b = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { tab: "health" } }, fetch: tes2.fetch, scale: 20 });
+    b.click("tessieBtn"); await wait(1300);
+    // 50 kWh at 66% → ~75.8 kWh full; 46% of it = 34.8 kWh = ~139 mi at 250 Wh/mi.
+    assert.strictEqual(b.html("eFull"), "~75.8<small>kWh</small>");
+    assert.ok(/~139 mi at 250 Wh\/mi/.test(b.html("hRows")), b.html("hRows"));
+    b.stop();
+  });
+
+  await test("Tessie: pack and low-charge warnings alert too", async () => {
+    const tes = fakeTessie(), buzz = []; Object.assign(tes.car, { speed: 60, gear: "D", level: 12, power: 70 });
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { alerts: "vibrate" } }, fetch: tes.fetch, scale: 20, vibrate: p => buzz.push(p) });
+    app.click("tessieBtn");
+    for (let i = 0; i < 6; i++) { await wait(500); tes.car.odometer += 0.5; tes.car.energy -= 0.6; }
+    assert.ok(buzz.some(p => JSON.stringify(p) === "[250]"), "warn pattern: " + JSON.stringify(buzz));
+    app.stop();
+  });
+
+  await test("Cockpit: charging shows the power, the charge limit and the time to reach it (Tessie)", async () => {
+    const tes = fakeTessie();
+    Object.assign(tes.car, { gear: "P", power: -7, charge: { charging_state: "Charging", charger_power: 7, time_to_full_charge: 1.5, charge_limit_soc: 80 } });
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(1300);
+    assert.strictEqual(app.text("kSocSub"), "Charging 7.0 kW · 80% in 1 h 30 min");
+    assert.deepStrictEqual([app.text("inst"), app.text("instSub"), app.text("effState")], ["Charging", "7.0 kW in", "80% in 1 h 30 min"]);
+    tes.car.charge = { charging_state: "Complete", charger_power: 0, charge_limit_soc: 80 }; await wait(1300);
+    assert.ok(/kWh left/.test(app.text("kSocSub")), app.text("kSocSub"));
+    app.stop();
+  });
+
+  await test("theme: follows the system by default, dark on the car's screen, or the one picked in Setup", async () => {
+    const ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36 Tesla/2026.32.3";
+    const phone = boot(); await wait(50);
+    assert.strictEqual(phone.document.documentElement.dataset.theme, undefined); assert.strictEqual(phone.el("cfgTheme").value, "auto");
+    phone.el("cfgTheme").on.change({ target: { value: "light" } });
+    assert.strictEqual(phone.document.documentElement.dataset.theme, "light");
+    assert.strictEqual(JSON.parse(phone.store.get("de.cfg.v1")).theme, "light");
+    phone.stop();
+    const car = boot({ ua }); await wait(50);
+    assert.strictEqual(car.document.documentElement.dataset.theme, "dark"); assert.strictEqual(car.el("cfgTheme").value, "dark");
+    car.el("cfgTheme").on.change({ target: { value: "auto" } });
+    assert.strictEqual(car.document.documentElement.dataset.theme, undefined, "Match the system on the car too, when picked");
+    car.stop();
   });
 
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);

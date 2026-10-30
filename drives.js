@@ -30,8 +30,8 @@
   }
 
   // Rebuild a saved drive from its numbers only (an imported backup is untrusted): id, score and habit text are recomputed.
-  const REQ = ["t0", "mi", "kwh", "wh"], ZERO = ["t1", "heavy", "friction", "regenKWh", "parkKWh", "accelKWh", "cruiseKWh", "stops", "maxMph"],
-    OPT = ["rated", "vsRatedPct", "rangeDeltaMi", "pedalPct", "climateKWh", "capturePct", "avgMph", "cruiseBand", "sweetBand", "outsideC"];
+  const REQ = ["t0", "mi", "kwh", "wh"], ZERO = ["t1", "heavy", "friction", "parkKWh", "accelKWh", "cruiseKWh", "stops", "maxMph"],
+    OPT = ["regenKWh", "rated", "vsRatedPct", "rangeDeltaMi", "pedalPct", "climateKWh", "capturePct", "avgMph", "cruiseBand", "sweetBand", "outsideC"];
   function clean(x) {
     const num = v => (typeof v === "number" && isFinite(v) ? v : null);
     if (!x || typeof x !== "object" || REQ.some(k => num(x[k]) == null) || !(x.mi > 0)) return null;
@@ -60,7 +60,7 @@
         vsRatedPct: rated ? Math.round((wh / rated - 1) * 100) : null,
         rangeDeltaMi: rated ? mi - (kwh * 1000) / rated : null,           // + = range saved vs driving at rated
         pedalPct, heavy: b.heavy - a.heavy, friction: b.friction - a.friction,
-        regenKWh: b.regen - a.regen, parkKWh: b.park - a.park,
+        regenKWh: a.regen != null && b.regen != null ? b.regen - a.regen : null, parkKWh: b.park - a.park,
         climateKWh: a.climate != null && b.climate != null ? b.climate - a.climate : null,
         accelKWh: b.accel - a.accel, cruiseKWh: b.cruise - a.cruise,
         stops: b.stops - a.stops, capturePct: b.kin - a.kin > 0.01 ? Math.round(((b.rgn - a.rgn) / (b.kin - a.kin)) * 100) : null,

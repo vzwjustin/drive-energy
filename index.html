@@ -22,9 +22,13 @@
   --f-num:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   color-scheme:dark;
 }
-@media (prefers-color-scheme: light){:root{
+/* Light follows the system unless Setup → Theme picks one (the car's screen defaults to dark). */
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
   --bg:#eef2f7; --surface:#fff; --inset:#f5f7fb; --raised:#eaeef4; --line:#dbe2ea; --line2:#c9d3df; --fg:#0b1220; --muted:#526075; --faint:#8a97a8;
   --regen:#059669; --info:#0891b2; --energy:#d97706; --energy-soft:rgba(217,119,6,.12); --warn:#d97706; --bad:#e11d48; --rated:#7c8ba1; color-scheme:light }}
+:root[data-theme="light"]{
+  --bg:#eef2f7; --surface:#fff; --inset:#f5f7fb; --raised:#eaeef4; --line:#dbe2ea; --line2:#c9d3df; --fg:#0b1220; --muted:#526075; --faint:#8a97a8;
+  --regen:#059669; --info:#0891b2; --energy:#d97706; --energy-soft:rgba(217,119,6,.12); --warn:#d97706; --bad:#e11d48; --rated:#7c8ba1; color-scheme:light }
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--fg);font:14.5px/1.45 var(--f-ui);-webkit-tap-highlight-color:transparent}
@@ -315,26 +319,28 @@ body.drive .kpi{padding:9px 12px} body.drive .kpi .v{font-size:26px}
 body.drive .flow{margin-top:12px;padding-top:10px}
 body.drive .ftrack{height:26px} body.drive .gval{font-size:16px}
 body.drive .overlay .sheet{font-size:16px}
-/* Landscape mount: gauge on the left; tip, numbers, power bar, accelerator and guide stacked on the right */
-@media (orientation:landscape) and (max-height:540px){
-  body.drive .top{position:static;padding-block:4px}
-  body.drive .actions .btn{padding:5px 11px}
-  body.drive .wrap{padding-top:8px;gap:8px}
-  body.drive #view-cockpit{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr);gap:8px 14px;align-items:start;
-    grid-template-areas:"gauge coach" "gauge kpis" "gauge flow" "gauge pedal" "gauge guide"}
-  body.drive #view-cockpit .g12, body.drive .stack, body.drive .hero, body.drive .hbody{display:contents}
-  body.drive .coach{grid-area:coach;padding:8px 12px} body.drive .cicon{display:none}
-  body.drive .gaugewrap{grid-area:gauge;max-width:none;align-self:center}
-  body.drive .kpis{grid-area:kpis;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-  body.drive .kpi{padding:6px 10px} body.drive .kpi .v{font-size:20px} body.drive .kpi .label{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  body.drive .flow{grid-area:flow;margin:0;padding:0;border:0}
-  body.drive .pedal{grid-area:pedal;padding:8px 12px}
-  body.drive .guide{grid-area:guide;gap:8px} body.drive .gchip{padding:6px 10px}
-  body.drive .gnum{font-size:52px} body.drive .tip{font-size:17px} body.drive .gval{font-size:13px}
-  body.drive .pscale, body.drive .fticks, body.drive .goalform{display:none!important}
-}
+/* Side by side (a phone on its side, or the car's wide screen): gauge on the left; tip, numbers, power bar, accelerator
+   and guide stacked on the right. app.js sets .side. */
+body.drive.side .top{position:static;padding-block:4px}
+body.drive.side .actions .btn{padding:5px 11px}
+body.drive.side .wrap{padding-top:8px;gap:8px}
+body.drive.side #view-cockpit{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr);gap:8px 14px;align-items:start;
+  grid-template-rows:repeat(4,auto) 1fr;grid-template-areas:"gauge coach" "gauge kpis" "gauge flow" "gauge pedal" "gauge guide"}
+body.drive.side #view-cockpit .g12, body.drive.side .stack, body.drive.side .hero, body.drive.side .hbody{display:contents}
+body.drive.side .coach{grid-area:coach;padding:8px 12px} body.drive.side .cicon{display:none}
+body.drive.side .gaugewrap{grid-area:gauge;max-width:none;align-self:center}
+body.drive.side .kpis{grid-area:kpis;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+body.drive.side .kpi{padding:6px 10px} body.drive.side .kpi .v{font-size:20px} body.drive.side .kpi .label{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.drive.side .flow{grid-area:flow;margin:0;padding:0;border:0}
+body.drive.side .pedal{grid-area:pedal;padding:8px 12px}
+body.drive.side .guide{grid-area:guide;gap:8px} body.drive.side .gchip{padding:6px 10px}
+body.drive.side .gnum{font-size:52px} body.drive.side .tip{font-size:17px} body.drive.side .gval{font-size:13px}
+body.drive.side .pscale, body.drive.side .fticks, body.drive.side .goalform{display:none!important}
 /* Car touchscreen (the Tesla browser): Tessie only, so the adapter-only parts go; bigger touch targets at arm's length */
 body.car .needs-adapter{display:none!important}
+body.car.drive.side .gnum{font-size:76px} body.car.drive.side .gnum[data-word="true"]{font-size:46px} body.car.drive.side .gunit{font-size:16px}
+body.car.drive.side .tip{font-size:24px} body.car.drive.side .tip2{font-size:18px}
+body.car.drive.side .kpi .v{font-size:30px} body.car.drive.side .kpi .label{font-size:13px} body.car.drive.side .gval{font-size:16px}
 body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44px;min-width:60px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -624,6 +630,7 @@ body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44
           <label class="needs-adapter" for="cfgBrick">Watch brick #<input class="field" id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
           <label class="needs-adapter" for="cfgBase">Brick numbering<select class="field" id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
           <label for="cfgUnits">Units<select class="field" id="cfgUnits"><option value="mi">Miles (mph, Wh/mi, °F)</option><option value="km">Kilometers (km/h, Wh/km, °C)</option></select></label>
+          <label for="cfgTheme">Theme<select class="field" id="cfgTheme"><option value="auto">Match the system</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
         </div>
         <div class="btnrow needs-adapter" style="margin-top:14px"><button class="btn" id="chooseBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button></div>
         <p class="note needs-adapter">Picks a different Bluetooth adapter. Chrome then forgets the others, so auto-connect can't open the wrong one.</p>
@@ -667,15 +674,15 @@ body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v36</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v37</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=36"></script>
-<script src="elm.js?v=36"></script>
-<script src="sim.js?v=36"></script>
-<script src="units.js?v=36"></script>
-<script src="coach.js?v=36"></script>
-<script src="drives.js?v=36"></script>
-<script src="stops.js?v=36"></script>
-<script src="app.js?v=36"></script>
+<script src="decode.js?v=37"></script>
+<script src="elm.js?v=37"></script>
+<script src="sim.js?v=37"></script>
+<script src="units.js?v=37"></script>
+<script src="coach.js?v=37"></script>
+<script src="drives.js?v=37"></script>
+<script src="stops.js?v=37"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>
