@@ -139,6 +139,11 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .tip[data-tone="good"]{border-left-color:var(--regen)} .tip[data-tone="warn"]{border-left-color:var(--warn)} .tip[data-tone="bad"]{border-left-color:var(--bad)}
 .kv .v[data-tone="good"]{color:var(--regen)}
 .stable{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.scurve{width:100%;height:auto;display:block;margin-top:6px}
+.scurve text{font:500 10.5px var(--f-num);fill:var(--muted)}
+.stable2{display:flex;flex-direction:column;gap:2px;margin-top:6px;font-size:13px}
+.stable2 div{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:3px 6px;border-radius:6px;border:1px solid transparent}
+.stable2 .sweet{background:color-mix(in srgb,var(--energy) 16%,transparent)} .stable2 .cur{border-color:var(--fg)}
 .srow{display:grid;grid-template-columns:52px 1fr 40px;gap:8px;align-items:center;font-size:13.5px;padding:2px 4px;border-radius:6px;border:1px solid transparent}
 .srow .num:last-child{text-align:right;font-weight:600}
 .sbar{height:8px;background:var(--raised);border-radius:4px;overflow:hidden}
@@ -384,7 +389,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
         <button class="btn toggle" id="cruiseBtn" type="button" aria-pressed="false">Cruise / Autopilot on</button>
         <div class="label" style="margin-top:16px">Your speed vs Wh/mi <span id="tempBand" style="text-transform:none;letter-spacing:0"></span></div>
         <div id="speedTable" class="stable"></div>
-        <p class="note">Learned from your steady cruising, split by outside temperature, and kept on this phone. The amber row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
+        <p class="note">Learned from your steady cruising, split by outside temperature, and kept on this phone. The amber point/row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
       </section>
 
       <section class="panel" aria-label="Battery">
@@ -475,14 +480,14 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v18</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v19</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=18"></script>
-<script src="elm.js?v=18"></script>
-<script src="sim.js?v=18"></script>
-<script src="coach.js?v=18"></script>
-<script src="drives.js?v=18"></script>
-<script src="stops.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="decode.js?v=19"></script>
+<script src="elm.js?v=19"></script>
+<script src="sim.js?v=19"></script>
+<script src="coach.js?v=19"></script>
+<script src="drives.js?v=19"></script>
+<script src="stops.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

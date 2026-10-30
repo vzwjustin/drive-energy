@@ -296,9 +296,25 @@
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
     $("tempBand").textContent = band === "x" ? "" : `at ${band} °F outside`;
     if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile${band === "x" ? "" : " at this outside temperature"}.</p>`; return; }
-    const max = Math.max(...rows.map(r => r.wh)), cur = Math.floor(mph / 5) * 5;
-    box.innerHTML = rows.map(r => `<div class="srow${sweet && r.mph === sweet.mph ? " sweet" : ""}${mph > 2 && r.mph === cur ? " cur" : ""}">
-      <span class="num">${r.mph}–${r.mph + 4}</span><span class="sbar"><i style="width:${(r.wh / max) * 100}%"></i></span><span class="num">${Math.round(r.wh)}</span></div>`).join("");
+    // Speed curve: your Wh/mi at each 5-mph band (points at band centers), sweet spot highlighted, your speed marked,
+    // and what a full usable pack would reach at each band.
+    const usable = L.energyRemainingKWh != null ? Math.max(0, L.energyRemainingKWh - (L.bufferKWh ?? 0)) : null;
+    const W = 320, H = 150, Lp = 34, R = 10, T = 14, B = 24, xs = rows.map(r => r.mph + 2.5);
+    const x0 = Math.min(20, ...xs) - 2, x1 = Math.max(80, ...xs) + 2, ys = rows.map(r => r.wh);
+    const y0 = Math.floor((Math.min(...ys) - 20) / 50) * 50, y1 = Math.ceil((Math.max(...ys) + 20) / 50) * 50;
+    const X = v => Lp + ((v - x0) / (x1 - x0)) * (W - Lp - R), Y = v => T + ((y1 - v) / (y1 - y0)) * (H - T - B);
+    let g = "";
+    for (let v = y0; v <= y1; v += 50) g += `<line x1="${Lp}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${Lp - 5}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+    for (let v = Math.ceil(x0 / 10) * 10; v <= x1; v += 10) g += `<text x="${X(v)}" y="${H - 6}" text-anchor="middle">${v}</text>`;
+    const path = rows.map((r, i) => `${i ? "L" : "M"}${X(r.mph + 2.5).toFixed(1)},${Y(r.wh).toFixed(1)}`).join("");
+    const curX = mph > 3 ? X(Math.max(x0, Math.min(x1, mph))) : null;
+    box.innerHTML = `<svg class="scurve" viewBox="0 0 ${W} ${H}" role="img" aria-label="Your Wh/mi by speed">${g}
+      ${curX ? `<line x1="${curX}" x2="${curX}" y1="${T}" y2="${H - B}" stroke="var(--fg)" stroke-dasharray="3 3" opacity=".6"/><text x="${curX}" y="${T - 3}" text-anchor="middle" style="fill:var(--fg)">you ${Math.round(mph)}</text>` : ""}
+      ${rows.length > 1 ? `<path d="${path}" fill="none" stroke="var(--rated)" stroke-width="2"/>` : ""}
+      ${rows.map(r => `<circle cx="${X(r.mph + 2.5)}" cy="${Y(r.wh)}" r="${sweet && r.mph === sweet.mph ? 6 : 3.5}" fill="${sweet && r.mph === sweet.mph ? "var(--energy)" : "var(--rated)"}"/>`).join("")}
+      </svg>
+      <div class="stable2">${rows.map(r => `<div class="${sweet && r.mph === sweet.mph ? "sweet" : ""}${mph > 2 && r.mph === Math.floor(mph / 5) * 5 ? " cur" : ""}"><span class="num">${r.mph}–${r.mph + 4} mph</span><span class="num">${Math.round(r.wh)} Wh/mi</span><span class="num">${usable != null ? `${Math.round((usable * 1000) / r.wh)} mi` : ""}</span></div>`).join("")}</div>
+      <p class="note" style="margin:6px 0 0">Last column: how far your current charge goes at that speed.</p>`;
   }
 
   // Rated Wh/mi isn't broadcast (0x33A's old field is an artifact), so derive it from usable energy ÷ rated range.
