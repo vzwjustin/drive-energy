@@ -245,6 +245,7 @@
     const bars = $("split").children;
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
     renderBreakdown(t);
+    renderPlan(usable);
     // bricks
     renderBricks();
     renderCoach(live);
@@ -294,6 +295,30 @@
     const v = ((rem - (L.bufferKWh ?? 0)) * 1000) / range;
     if (v > 150 && v < 400) ratedEma = ratedEma == null ? v : ratedEma + (v - ratedEma) * 0.05;
     return ratedEma ? Math.round(ratedEma) : null;
+  }
+
+  // Charge plan: energy for the miles you need at your real consumption (last 7 drives, else this trip, else rated),
+  // plus the reserve you want to arrive with, as a % of the current full pack.
+  cfg.plan = Object.assign({ mi: 30, res: 20 }, cfg.plan || {});
+  $("planMi").value = String(cfg.plan.mi); $("planRes").value = String(cfg.plan.res);
+  $("planMi").addEventListener("change", e => { const v = Math.round(parseFloat(e.target.value)); if (v >= 1 && v <= 400) { cfg.plan.mi = v; store(KEY.cfg, cfg); } else e.target.value = String(cfg.plan.mi); render(true); });
+  $("planRes").addEventListener("change", e => { cfg.plan.res = +e.target.value; store(KEY.cfg, cfg); render(true); });
+  function renderPlan(usable) {
+    const full = L.fullPackKWh, box = $("planRows");
+    const recent = drives.history.slice(0, 7).filter(d => d.wh > 0);
+    const t = app.trip, tripMi = t ? t.lastOdo - t.odo0 : 0;
+    const wh = recent.length >= 2 ? recent.reduce((p, d) => p + d.wh, 0) / recent.length : tripMi > 2 && t.drive > 0 ? (t.drive * 1000) / tripMi : ratedWh();
+    const basis = recent.length >= 2 ? `your last ${recent.length} drives` : tripMi > 2 ? "this trip" : "rated";
+    if (!full || !wh) { box.innerHTML = `<p class="note">Needs the full-pack reading from the car: connect the adapter or Tessie.</p>`; return; }
+    const needKWh = (cfg.plan.mi * wh) / 1000, needPct = Math.min(100, Math.ceil((needKWh / full) * 100 + cfg.plan.res));
+    const soc = L.socUI ?? L.uiSOC;
+    const coverMi = usable != null ? Math.max(0, ((usable - (cfg.plan.res / 100) * full) * 1000) / wh) : null;
+    box.innerHTML = `
+      <div><span>Charge to at least</span><span class="planbig" data-tone="${soc != null && soc >= needPct ? "good" : ""}">${needPct}%</span></div>
+      <div><span>Energy for ${cfg.plan.mi} mi</span><span>${needKWh.toFixed(1)} kWh at ${Math.round(wh)} Wh/mi</span></div>
+      ${soc != null ? `<div><span>Now at ${Math.round(soc)}%</span><span>${soc >= needPct ? "enough, no charge needed" : `${needPct - Math.round(soc)}% short`}</span></div>` : ""}
+      ${coverMi != null ? `<div><span>Current charge covers</span><span>~${Math.round(coverMi)} mi with ${cfg.plan.res}% left</span></div>` : ""}
+      <p class="note" style="margin:6px 0 0">Based on ${basis}. Cold weather, climate use and highway speed raise Wh/mi.</p>`;
   }
 
   const EB = [["cruise", "Holding speed", "var(--rated)"], ["accel", "Speeding up", "var(--energy)"], ["climate", "Climate", "#6aa5e8"], ["parked", "Parked / standby", "var(--faint)"]];
@@ -536,13 +561,17 @@
   }
   const gaugeDeg = v => G.start + (Math.max(0, Math.min(G.max, v)) / G.max) * G.sweep;
 
-  let whSmooth = null;
+  let whSmooth = null, kwE = null, mphE = null;
   function renderGauge(live, tripAvg) {
     const tg = app.tgt, mph = L.speedMph ?? 0, target = tg && tg.whTarget ? Math.round(tg.whTarget) : null;
     const max = Math.max(500, Math.ceil(((target || 300) * 1.9) / 100) * 100);
     if (!G.built || G.max !== max || G.target !== target) buildGauge(max, target);
     const moving = live && mph > 3 && app.pEma != null;
-    if (moving) { const w = (app.pEma * 1000) / mph; whSmooth = whSmooth == null ? w : whSmooth + (w - whSmooth) * 0.12; } else whSmooth = null;
+    // Ratio of separately smoothed power and speed: avoids huge spikes at low speed (30 kW at 3 mph ≠ 10,000 Wh/mi).
+    if (moving) {
+      const k = 0.18; kwE = kwE == null ? app.pEma : kwE + (app.pEma - kwE) * k; mphE = mphE == null ? mph : mphE + (mph - mphE) * k;
+      whSmooth = mphE > 8 ? Math.max(-999, Math.min(1500, (kwE * 1000) / mphE)) : null;
+    } else { whSmooth = null; kwE = null; mphE = null; }
     const v = whSmooth, el = $("inst"), st = $("effState");
     const tone = v == null || !target ? "" : v <= target ? "good" : v <= target * 1.35 ? "warn" : "bad";
     const val = $("gVal");
@@ -553,8 +582,9 @@
     if (!live) { el.textContent = "—"; el.dataset.tone = ""; $("instSub").textContent = "Wh/mi now"; st.textContent = app.source ? "Waiting for the car" : "Connect the car"; st.dataset.tone = ""; }
     else if (!moving) {
       const kw = app.pEma ?? 0;
-      el.textContent = kw < -0.3 ? "Charging" : "Parked"; el.dataset.tone = "";
-      $("instSub").textContent = `${Math.abs(kw) < 10 ? Math.abs(kw).toFixed(1) : Math.round(Math.abs(kw))} kW ${kw < -0.3 ? "in" : "draw"}`;
+      const charging = kw < -0.3 && L.gear !== "D" && L.gear !== "R";
+      el.textContent = charging ? "Charging" : L.gear === "D" || L.gear === "R" ? "Stopped" : "Parked"; el.dataset.tone = "";
+      $("instSub").textContent = `${Math.abs(kw) < 10 ? Math.abs(kw).toFixed(1) : Math.round(Math.abs(kw))} kW ${kw < -0.3 ? (charging ? "in" : "regen") : "draw"}`;
       st.textContent = "Not moving"; st.dataset.tone = "";
     } else if (v < 0) { el.textContent = "Regen"; el.dataset.tone = "good"; $("instSub").textContent = `recovering ${Math.round(-app.pEma)} kW`; st.textContent = "Recovering energy"; st.dataset.tone = "good"; }
     else {

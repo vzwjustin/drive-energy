@@ -189,6 +189,21 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .fticks{position:relative;height:16px;font:500 11px var(--f-num);color:var(--muted)}
 .fticks span{position:absolute;top:3px;transform:translateX(-50%)}
 body.drive .gnum{font-size:72px} body.drive .kpi .v{font-size:34px} body.drive .ftrack{height:30px}
+.cfgrow2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cfgrow2 label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
+.cfgrow2 input,.cfgrow2 select{background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num);width:100%;color:var(--fg)}
+.planbig{font:600 22px var(--f-num)}
+/* Drive view: strip the header to status + Drive view; landscape layout for a mounted phone */
+body.drive header .btns .btn:not(#driveBtn){display:none}
+@media (orientation:landscape) and (max-height:540px){
+  body.drive{padding-block:8px 8px}
+  body.drive .cluster{grid-template-columns:minmax(220px,36vw) minmax(0,1fr);gap:14px}
+  body.drive .gaugewrap{max-width:none} body.drive .gnum{font-size:58px}
+  body.drive .kpis{grid-template-columns:repeat(4,minmax(0,1fr))} body.drive .kpi .v{font-size:24px} body.drive .kpi .sub{display:none}
+  body.drive .pscale, body.drive .tip2, body.drive .goalform{display:none!important}
+  body.drive .tip{font-size:19px;min-height:auto;margin-top:10px} body.drive .guide{margin-top:10px}
+  body.drive header h1{font-size:18px}
+}
 /* Drives list + summary sheet */
 .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-bottom:10px}
 .tv{font:600 24px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
@@ -371,6 +386,15 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
         </div>
       </section>
 
+      <section class="panel" aria-label="Charge plan">
+        <h2>Charge plan <span>at your real Wh/mi</span></h2>
+        <div class="cfgrow2">
+          <label for="planMi">Miles before next charge<input id="planMi" type="text" inputmode="numeric" autocomplete="off"></label>
+          <label for="planRes">Arrive with at least<select id="planRes"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="30">30%</option></select></label>
+        </div>
+        <div class="rows" id="planRows" style="margin-top:12px"></div>
+      </section>
+
       <section class="panel" aria-label="Trip">
         <h2>Trip <span id="tSince"></span></h2>
         <div class="kv" style="grid-template-columns:1fr 1fr">
@@ -437,13 +461,13 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v13</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v15</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=13"></script>
-<script src="elm.js?v=13"></script>
-<script src="sim.js?v=13"></script>
-<script src="coach.js?v=13"></script>
-<script src="drives.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="decode.js?v=15"></script>
+<script src="elm.js?v=15"></script>
+<script src="sim.js?v=15"></script>
+<script src="coach.js?v=15"></script>
+<script src="drives.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
