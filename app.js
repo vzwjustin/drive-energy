@@ -449,12 +449,17 @@
     }
   }
 
-  $("gGoal").addEventListener("click", () => { const f = $("goalForm"); f.hidden = !f.hidden; if (!f.hidden) { $("goalMi").value = cfg.goal ? cfg.goal.mi : ""; $("goalMi").focus(); } });
-  $("goalForm").addEventListener("submit", e => {
-    e.preventDefault();
-    const mi = Math.round(+$("goalMi").value);
-    if (mi >= 1 && mi <= 400) { cfg.goal = { mi, odo0: L.odoMi ?? null, at: Date.now() }; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); }
+  $("gGoal").addEventListener("click", () => {
+    const f = $("goalForm"); f.hidden = !f.hidden; $("goalMsg").textContent = "";
+    if (!f.hidden) { $("goalMi").value = cfg.goal ? String(cfg.goal.mi) : ""; f.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
   });
+  function setGoal(mi) {
+    if (!(mi >= 1 && mi <= 400)) { $("goalMsg").textContent = "Enter a number of miles from 1 to 400."; return; }
+    cfg.goal = { mi, odo0: L.odoMi ?? null, at: Date.now() }; store(KEY.cfg, cfg);
+    $("goalForm").hidden = true; lastChart = 0; render(true);
+  }
+  document.querySelectorAll("#goalQuick [data-mi]").forEach(b => b.addEventListener("click", () => setGoal(+b.dataset.mi)));
+  $("goalForm").addEventListener("submit", e => { e.preventDefault(); setGoal(Math.round(parseFloat(String($("goalMi").value).replace(/[^0-9.]/g, "")))); });
   $("goalClear").addEventListener("click", () => { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); });
   function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) keepAwake(); }
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
@@ -595,6 +600,11 @@
   syncSeg();
   status("off", "Not connected");
   if (!window.ElmLink || !ElmLink.supported()) notice("Live car data needs Chrome 138+ on Android (or desktop Chrome) over https://. Demo works anywhere.", "info");
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Service worker: check for a new version on every load and switch to it right away (one automatic reload).
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(() => {});
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (!reloaded && !app.source) { reloaded = true; location.reload(); } });
+  }
   render(false);
 })();

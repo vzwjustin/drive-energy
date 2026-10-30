@@ -155,6 +155,10 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 @media (max-width:560px){.guide{grid-template-columns:1fr 1fr}.guide .gbtn{grid-column:1/-1}}
 .goalform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 .goalform label{font-size:13px;color:var(--muted);width:100%}
+.quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%}
+.quick .btn{padding:10px 0;font:600 16px var(--f-num)}
+.goalform{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:12px}
+.goalform input{background:var(--surface)!important}
 .goalform input{flex:1 1 120px;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num)}
 .stat .v[data-tone="good"]{color:var(--regen)} .stat .v[data-tone="warn"]{color:var(--warn)} .stat .v[data-tone="bad"]{color:var(--bad)}
 /* Target band on the power meter: green = efficient draw for this speed, or gentle regen */
@@ -223,11 +227,18 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <div class="gchip" id="gSpeed"><span class="glabel">Best speed</span><span class="gval" id="gSpeedV">—</span></div>
       <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel" id="gGoalL">Range goal</span><span class="gval" id="gGoalV">Set a goal</span></button>
     </div>
-    <form class="goalform" id="goalForm" hidden>
-      <label for="goalMi">Miles you need to make</label>
-      <input id="goalMi" type="number" min="1" max="400" inputmode="numeric" placeholder="e.g. 45">
+    <form class="goalform" id="goalForm" novalidate hidden>
+      <label for="goalMi">How many miles do you need to make? Tap one, or type your own.</label>
+      <div class="quick" id="goalQuick">
+        <button class="btn" type="button" data-mi="10">10</button><button class="btn" type="button" data-mi="20">20</button>
+        <button class="btn" type="button" data-mi="30">30</button><button class="btn" type="button" data-mi="50">50</button>
+        <button class="btn" type="button" data-mi="75">75</button><button class="btn" type="button" data-mi="100">100</button>
+        <button class="btn" type="button" data-mi="150">150</button><button class="btn" type="button" data-mi="200">200</button>
+      </div>
+      <input id="goalMi" type="text" inputmode="numeric" autocomplete="off" placeholder="Miles, e.g. 45" enterkeyhint="done">
       <button class="btn primary" type="submit">Set goal</button>
-      <button class="btn" id="goalClear" type="button">Clear</button>
+      <button class="btn" id="goalClear" type="button">Clear goal</button>
+      <p class="note" id="goalMsg" style="width:100%;margin:0"></p>
     </form>
     <p class="tip" id="tip" data-tone="idle" aria-live="polite">Connect the car to start coaching.</p>
     <p class="tip2" id="tip2"></p>
@@ -330,7 +341,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     </details>
   </section>
 
-  <footer><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v7</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
 <script src="decode.js"></script>
 <script src="elm.js"></script>
