@@ -34,6 +34,18 @@ To try it locally on a desktop first, run `npx serve .` in this folder. Desktop 
 
 On later visits, Chrome remembers the adapter, so **Connect car** skips the chooser.
 
+## Efficiency cluster (top of the screen)
+
+- **Efficiency gauge:** live Wh/mi, smoothed over a few seconds.
+  - The arc is green up to your **target**, amber to 1.35× the target, and red beyond.
+  - The target is your own best steady-cruise Wh/mi at this speed and outside temperature, or the rated figure until enough data exists. The white tick marks it.
+  - The amber dot is your trip average. The badge underneath reads **Efficient**, **A bit heavy** or **Wasting range**.
+- **Efficiency score (0–100, this trip):**
+  - 70% is consumption vs rated: 100 at 15% or more under rated Wh/mi, 0 at 50% or more over.
+  - 30% is the share of pedal time spent in the 15–40% range.
+- **Tiles:** range at this pace, average over the last 5/15/30 mi, and power.
+- **Power flow bar:** regen to the left of zero, power used to the right, with green "efficient" zones on both sides. The label states it in words, for example "12 kW · efficient" or "35 kW regen · strong, lift earlier".
+
 ## Max-range guide
 
 Everything below is driven by **your car's own steady-cruise data** (the coach's speed table at the current outside temperature), falling back to rated consumption until enough data exists.

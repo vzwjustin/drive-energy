@@ -180,21 +180,19 @@
     set("pw", fx(p, Math.abs(p ?? 0) < 10 ? 1 : 0), "kW");
     $("pwSub").textContent = p == null ? "waiting for pack data" : p < -0.2 ? (mph > 1 ? "regenerating" : "charging") : mph > 1 ? "driving" : "parked draw";
     // consumption
-    const inst = p != null && mph > 3 ? (p * 1000) / mph : null;
-    set("inst", fx(inst), "Wh/mi");
-    const tg = app.tgt;
-    $("inst").dataset.tone = inst == null || !tg || !tg.whTarget ? "" : inst <= tg.whTarget * 1.1 ? "good" : inst <= tg.whTarget * 1.4 ? "warn" : "bad";
-    $("instSub").textContent = mph != null ? `${fx(mph)} mph` : "—";
     const tripMi = t ? t.lastOdo - t.odo0 : 0, tripAvg = t && tripMi > 0.3 ? (t.drive * 1000) / tripMi : null;
     const wAvg = windowAvg(t, cfg.win);
     set("avg", fx(wAvg), "Wh/mi"); $("avgLabel").textContent = `Avg · last ${cfg.win} mi`;
     const rated = ratedWh();
-    $("avgSub").textContent = wAvg && rated ? `${Math.round((rated / wAvg) * 100)}% of rated (${rated} Wh/mi)` : rated ? `rated ${rated} Wh/mi` : "builds as you drive";
+    const vsRated = r => (r <= 1 ? `${Math.round((1 - r) * 100)}% under rated` : `${Math.round((r - 1) * 100)}% over rated`);
+    $("avgSub").textContent = wAvg && rated ? `${vsRated(wAvg / rated)} (${rated} Wh/mi)` : rated ? `rated ${rated} Wh/mi` : "builds as you drive";
     const usable = L.energyRemainingKWh != null ? Math.max(0, L.energyRemainingKWh - (L.bufferKWh ?? 0)) : null;
     const basis = wAvg ?? tripAvg;
     set("proj", usable != null && basis > 50 ? fx((usable * 1000) / basis) : fx(L.ratedRangeMi), "mi");
     $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(basis)} Wh/mi · rated ${fx(L.ratedRangeMi)} mi` : "rated range";
     renderGuide(usable, basis);
+    renderGauge(live, tripAvg);
+    renderScore(tripMi, tripAvg);
     // battery
     const soc = L.socUI ?? L.uiSOC;
     $("battFill").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`; $("battPct").textContent = soc != null ? `${fx(soc, 1)}%` : "—";
@@ -465,52 +463,108 @@
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
   setDrive(!!cfg.drive);
 
-  /* ---------------- vertical power meter ----------------
-     Animated every display frame from the raw pack power (not the 250 ms tick), lightly smoothed.
-     Up = power drawn (scale tops out at the car's discharge limit), down = regen (scale bottoms out at the
-     regen limit the BMS reports, drawn as a dashed line when it's lower than the scale). √-scaled so 5–20 kW
-     cruising still moves the bar visibly. */
-  const meter = { v: 0, peak: 0, peakAt: 0, last: performance.now(), scaleUp: 0, scaleDn: 0 };
-  function meterScales() {
-    const up = L.maxDischargeKW > 40 && L.maxDischargeKW < 400 ? L.maxDischargeKW : 200;
-    return { up: Math.max(150, Math.ceil(up / 50) * 50), dn: 80 };
+  /* ---------------- efficiency gauge + power flow ----------------
+     Gauge: smoothed Wh/mi right now on a 240° arc. Green up to your target for this speed (your own
+     steady-cruise data, else rated), amber to 1.35× target, red beyond. White tick = target, amber dot = trip avg.
+     Flow bar: left of zero = regen, right = power used, animated every frame from raw pack power. */
+  const G = { cx: 120, cy: 112, r: 92, start: 150, sweep: 240, max: 0, built: false };
+  const polar = (deg, r = G.r) => { const a = (deg * Math.PI) / 180; return [G.cx + r * Math.cos(a), G.cy + r * Math.sin(a)]; };
+  const arcPath = (d0, d1, r = G.r) => { const [x0, y0] = polar(d0, r), [x1, y1] = polar(d1, r); return `M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${d1 - d0 > 180 ? 1 : 0} 1 ${x1.toFixed(1)},${y1.toFixed(1)}`; };
+  const ARC_LEN = (Math.PI * G.r * G.sweep) / 180;
+  function buildGauge(max, target) {
+    G.max = max; G.target = target;
+    const deg = v => G.start + (Math.max(0, Math.min(max, v)) / max) * G.sweep;
+    const z1 = target || max * 0.45, z2 = Math.min(max, z1 * 1.35);
+    let t = "";
+    for (let v = 0; v <= max; v += 100) { const [x, y] = polar(deg(v), G.r - 24); t += `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle">${v}</text>`; }
+    const [tx0, ty0] = polar(deg(z1), G.r - 13), [tx1, ty1] = polar(deg(z1), G.r + 13);
+    $("effGauge").innerHTML = `
+      <path class="arcbg" d="${arcPath(G.start, G.start + G.sweep)}"/>
+      <path class="zone" d="${arcPath(deg(0), deg(z1), G.r + 14)}" stroke="var(--regen)"/>
+      <path class="zone" d="${arcPath(deg(z1), deg(z2), G.r + 14)}" stroke="var(--warn)"/>
+      <path class="zone" d="${arcPath(deg(z2), deg(max), G.r + 14)}" stroke="var(--bad)"/>
+      <path class="val" id="gVal" d="${arcPath(G.start, G.start + G.sweep)}" stroke="var(--regen)" stroke-dasharray="0 ${ARC_LEN}"/>
+      ${target ? `<line class="tgt" x1="${tx0.toFixed(1)}" y1="${ty0.toFixed(1)}" x2="${tx1.toFixed(1)}" y2="${ty1.toFixed(1)}"/>` : ""}
+      <circle class="avgdot" id="gAvg" r="6" cx="-20" cy="-20"/>
+      ${t}`;
+    G.built = true;
   }
-  function drawTicks(sc) {
-    if (meter.scaleUp === sc.up && meter.scaleDn === sc.dn) return;
-    meter.scaleUp = sc.up; meter.scaleDn = sc.dn;
-    const zero = 64, ticks = [[sc.up, 1], [100, 1], [50, 1], [20, 1], [0, 0], [-20, -1], [-50, -1], [-sc.dn, -1]];
-    $("mTicks").innerHTML = ticks.filter(([v], i, a) => a.findIndex(x => x[0] === v) === i && Math.abs(v) <= (v >= 0 ? sc.up : sc.dn))
-      .map(([v]) => `<span style="top:${meterPos(v, sc, zero)}%">${v > 0 ? v : v < 0 ? "−" + -v : "0"}</span>`).join("");
+  const gaugeDeg = v => G.start + (Math.max(0, Math.min(G.max, v)) / G.max) * G.sweep;
+
+  let whSmooth = null;
+  function renderGauge(live, tripAvg) {
+    const tg = app.tgt, mph = L.speedMph ?? 0, target = tg && tg.whTarget ? Math.round(tg.whTarget) : null;
+    const max = Math.max(500, Math.ceil(((target || 300) * 1.9) / 100) * 100);
+    if (!G.built || G.max !== max || G.target !== target) buildGauge(max, target);
+    const moving = live && mph > 3 && app.pEma != null;
+    if (moving) { const w = (app.pEma * 1000) / mph; whSmooth = whSmooth == null ? w : whSmooth + (w - whSmooth) * 0.12; } else whSmooth = null;
+    const v = whSmooth, el = $("inst"), st = $("effState");
+    const tone = v == null || !target ? "" : v <= target ? "good" : v <= target * 1.35 ? "warn" : "bad";
+    const val = $("gVal");
+    val.setAttribute("stroke-dasharray", `${v != null && v > 0 ? ((Math.min(G.max, v) / G.max) * ARC_LEN).toFixed(1) : 0} ${ARC_LEN}`);
+    val.setAttribute("stroke", tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : "var(--regen)");
+    const dot = $("gAvg");
+    if (tripAvg > 0) { const [x, y] = polar(gaugeDeg(tripAvg)); dot.setAttribute("cx", x.toFixed(1)); dot.setAttribute("cy", y.toFixed(1)); } else { dot.setAttribute("cx", -20); dot.setAttribute("cy", -20); }
+    if (!live) { el.textContent = "—"; el.dataset.tone = ""; $("instSub").textContent = "Wh/mi now"; st.textContent = app.source ? "Waiting for the car" : "Connect the car"; st.dataset.tone = ""; }
+    else if (!moving) {
+      const kw = app.pEma ?? 0;
+      el.textContent = kw < -0.3 ? "Charging" : "Parked"; el.dataset.tone = "";
+      $("instSub").textContent = `${Math.abs(kw) < 10 ? Math.abs(kw).toFixed(1) : Math.round(Math.abs(kw))} kW ${kw < -0.3 ? "in" : "draw"}`;
+      st.textContent = "Not moving"; st.dataset.tone = "";
+    } else if (v < 0) { el.textContent = "Regen"; el.dataset.tone = "good"; $("instSub").textContent = `recovering ${Math.round(-app.pEma)} kW`; st.textContent = "Recovering energy"; st.dataset.tone = "good"; }
+    else {
+      el.textContent = String(Math.round(v)); el.dataset.tone = tone; $("instSub").textContent = `Wh/mi now · ${Math.round(mph)} mph`;
+      st.textContent = tone === "good" ? "Efficient" : tone === "warn" ? "A bit heavy" : tone === "bad" ? "Wasting range" : "Measuring";
+      st.dataset.tone = tone;
+    }
+    $("effTarget").textContent = target ? `Target ${target} Wh/mi${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(tripAvg)}` : ""}` : "";
   }
-  function meterFrac(v, sc) { return v >= 0 ? Math.sqrt(Math.min(1, v / sc.up)) : Math.sqrt(Math.min(1, -v / sc.dn)); }
-  function meterPos(v, sc, zero) { return v >= 0 ? zero * (1 - meterFrac(v, sc)) : zero + (100 - zero) * meterFrac(v, sc); }
-  function meterFrame(now) {
-    const dt = Math.min(0.1, (now - meter.last) / 1000); meter.last = now;
+
+  // Efficiency score, 0–100 for this trip: 70% consumption vs rated (100 at ≤85% of rated Wh/mi, 0 at ≥150%),
+  // 30% share of pedal time in the 15–40% range. Shown once the trip has half a mile.
+  function renderScore(tripMi, tripAvg) {
+    const rated = ratedWh(), el = $("effScore");
+    if (!(tripMi > 0.5) || !(tripAvg > 0) || !rated) { el.innerHTML = "—"; el.dataset.tone = ""; $("effScoreSub").textContent = "drive half a mile to score"; return; }
+    const r = tripAvg / rated, s1 = Math.max(0, Math.min(1, (1.5 - r) / 0.65)) * 100;
+    const pedal = app.coach.score(), sc = Math.round(0.7 * s1 + 0.3 * (pedal ?? s1));
+    el.innerHTML = `${sc}<small>/100</small>`; el.dataset.tone = sc >= 80 ? "good" : sc >= 60 ? "warn" : "bad";
+    $("effScoreSub").textContent = `${r <= 1 ? Math.round((1 - r) * 100) + "% under" : Math.round((r - 1) * 100) + "% over"} rated Wh/mi${pedal != null ? ` · pedal ${pedal}% in range` : ""}`;
+  }
+
+  // Power flow bar: zero sits at 28% so the "using" side gets more room. √ scale so cruising is visible.
+  const FZ = 28, flow = { v: 0, last: performance.now(), up: 0, dn: 0 };
+  const fFrac = (v, up, dn) => (v >= 0 ? Math.sqrt(Math.min(1, v / up)) : Math.sqrt(Math.min(1, -v / dn)));
+  const fPos = (v, up, dn) => (v >= 0 ? FZ + (100 - FZ) * fFrac(v, up, dn) : FZ - FZ * fFrac(v, up, dn));
+  function flowTicks(up, dn) {
+    if (flow.up === up && flow.dn === dn) return; flow.up = up; flow.dn = dn;
+    $("fTicks").innerHTML = [-dn, -20, 0, 20, 50, 100, up].filter((v, i, a) => a.indexOf(v) === i && v <= up && v >= -dn)
+      .map(v => `<span style="left:${fPos(v, up, dn)}%">${v < 0 ? "−" + -v : v}${v === up ? " kW" : ""}</span>`).join("");
+  }
+  function flowFrame(now) {
+    const dt = Math.min(0.1, (now - flow.last) / 1000); flow.last = now;
     const live = app.source && performance.now() - app.lastFrameAt < (app.source === "tessie" ? 45000 : 4000);
-    const target = live && L.powerKW != null ? L.powerKW : 0;
-    meter.v += (target - meter.v) * Math.min(1, dt / 0.12);
-    const sc = meterScales(); drawTicks(sc);
-    const f = meterFrac(meter.v, sc), tg = app.tgt, moving = live && tg && tg.mph > 3;
-    const bu = $("mBandUp"), bd = $("mBandDn");
-    bu.hidden = bd.hidden = !moving;
-    if (moving) { bu.style.height = `${meterFrac(tg.upKW, sc) * 100}%`; bd.style.height = `${meterFrac(-tg.regenGentle, sc) * 100}%`; }
-    $("mUp").dataset.tone = !moving ? "" : meter.v <= tg.upKW ? "ok" : meter.v <= tg.upKW * 1.8 ? "" : "way";
-    $("mDown").dataset.tone = moving && -meter.v > tg.regenGentle ? "hard" : "";
-    $("mUp").style.transform = `scaleY(${meter.v > 0 ? f : 0})`;
-    $("mDown").style.transform = `scaleY(${meter.v < 0 ? f : 0})`;
-    // Peak hold: the strongest pull or regen of the last 2 s.
-    if (Math.abs(meter.v) > Math.abs(meter.peak) || now - meter.peakAt > 2000) { meter.peak = meter.v; meter.peakAt = now; }
-    const pk = $("mPeak"); pk.hidden = !live || Math.abs(meter.peak) < 3; if (!pk.hidden) pk.style.top = `${meterPos(meter.peak, sc, 64)}%`;
-    // Regen limit marker when the BMS is limiting regen below the scale (cold pack, near full).
-    const lim = $("mLimit"), rl = L.maxRegenKW;
-    lim.hidden = !live || !(rl >= 0 && rl < sc.dn - 2);
-    if (!lim.hidden) lim.style.top = `${meterFrac(-rl, sc) * 100}%`;
-    const now_ = $("mNow");
-    now_.textContent = live && L.powerKW != null ? `${meter.v < -0.5 ? "−" : ""}${Math.abs(meter.v) < 10 ? Math.abs(meter.v).toFixed(1) : Math.round(Math.abs(meter.v))}` : "—";
-    now_.dataset.dir = meter.v < -0.5 ? "regen" : meter.v > 0.5 ? "use" : "";
-    requestAnimationFrame(meterFrame);
+    flow.v += ((live && L.powerKW != null ? L.powerKW : 0) - flow.v) * Math.min(1, dt / 0.12);
+    const up = Math.max(150, Math.ceil((L.maxDischargeKW > 40 && L.maxDischargeKW < 400 ? L.maxDischargeKW : 200) / 50) * 50), dn = 80;
+    flowTicks(up, dn);
+    const v = flow.v, tg = app.tgt, moving = live && tg && tg.mph > 3;
+    $("fUse").style.transform = `scaleX(${v > 0 ? fFrac(v, up, dn) : 0})`;
+    $("fRegen").style.transform = `scaleX(${v < 0 ? fFrac(v, up, dn) : 0})`;
+    const zu = $("fZoneU"), zr = $("fZoneR"); zu.hidden = zr.hidden = !moving;
+    if (moving) {
+      zu.style.left = `${FZ}%`; zu.style.width = `${fPos(tg.upKW, up, dn) - FZ}%`;
+      const l = fPos(-tg.regenGentle, up, dn); zr.style.left = `${l}%`; zr.style.width = `${FZ - l}%`;
+    }
+    const useTone = !moving ? "" : v <= tg.upKW ? "ok" : v <= tg.upKW * 1.8 ? "" : "way", hard = moving && -v > tg.regenGentle;
+    $("fUse").dataset.tone = useTone; $("fRegen").dataset.tone = hard ? "hard" : "";
+    const kw = `${Math.abs(v) < 10 ? Math.abs(v).toFixed(1) : Math.round(Math.abs(v))} kW`;
+    $("flowState").textContent = !live || L.powerKW == null ? "—"
+      : v < -0.5 ? (hard ? `${kw} regen · strong, lift earlier` : `${kw} regen`)
+      : !moving ? `${kw} ${v > 0.3 ? "draw" : ""}`.trim()
+      : useTone === "ok" ? `${kw} · efficient` : useTone === "way" ? `${kw} · hard acceleration` : `${kw} · above efficient`;
+    requestAnimationFrame(flowFrame);
   }
-  requestAnimationFrame(meterFrame);
+  document.documentElement.style.setProperty("--z", `${FZ}%`);
+  requestAnimationFrame(flowFrame);
 
   /* ---------------- diagnostics ---------------- */
   const ID_NAMES = { 0x118: "pedal/brake/gear", 0x132: "pack V/A → power", 0x252: "power limits", 0x257: "speed", 0x267: "road grade", 0x292: "SOC",
