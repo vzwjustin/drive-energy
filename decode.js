@@ -38,6 +38,7 @@
     ODO: 0x3B6,
     TOTALS: 0x3D2,    // lifetime kWh out / in
     SPEED: 0x257,
+    DRIVE: 0x118,     // accelerator pedal, brake pedal, gear
     BRICKS: 0x401,
   };
 
@@ -96,6 +97,13 @@
           if (dis == null || chg == null) return null;
           out.totalOutKWh = dis * 0.001; out.totalInKWh = chg * 0.001;
           return "totals";
+        }
+        case IDS.DRIVE: {
+          const raw = bits(b, 32, 8);
+          out.pedalPct = raw === 255 ? null : raw * 0.4;          // 255 = SNA
+          const br = bits(b, 19, 2); out.brakeOn = br === 1 ? true : br === 0 ? false : null;
+          out.gear = ({ 1: "P", 2: "R", 3: "N", 4: "D" })[bits(b, 21, 3)] || null;
+          return "drive";
         }
         case IDS.SPEED: {
           const kph = bits(b, 12, 12) * 0.08 - 40;

@@ -105,6 +105,24 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .cfg label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
 .cfg input[type=number],.cfg select{background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num);width:100%}
 .cfg .check{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--fg)}
+.pedal{margin-top:14px}
+.prow{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.prow .num{font-weight:600;font-size:16px;margin-right:auto}
+.brake{font:600 11.5px var(--f-body);letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--faint)}
+.brake[data-on="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
+.ptrack{position:relative;height:12px;background:var(--raised);border-radius:6px;overflow:hidden}
+.pgreen{position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--regen) 22%,transparent);border-right:2px solid var(--regen);transition:width .4s}
+.pfill{position:absolute;inset:3px auto 3px 0;border-radius:3px;background:var(--regen);transition:width .15s linear}
+.pfill[data-tone="over"]{background:var(--warn)}
+.tip{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--raised);font-size:19px;font-weight:600;line-height:1.3;border-left:4px solid var(--faint);min-height:52px}
+.tip[data-tone="good"]{border-left-color:var(--regen)} .tip[data-tone="warn"]{border-left-color:var(--warn)} .tip[data-tone="bad"]{border-left-color:var(--bad)}
+.kv .v[data-tone="good"]{color:var(--regen)}
+.stable{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.srow{display:grid;grid-template-columns:52px 1fr 40px;gap:8px;align-items:center;font-size:13.5px;padding:2px 4px;border-radius:6px;border:1px solid transparent}
+.srow .num:last-child{text-align:right;font-weight:600}
+.sbar{height:8px;background:var(--raised);border-radius:4px;overflow:hidden}
+.sbar i{display:block;height:100%;background:var(--rated)}
+.srow.sweet .sbar i{background:var(--energy)} .srow.cur{border-color:var(--fg)}
 footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:12.5px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -137,6 +155,11 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <div class="track"><div id="pbar"></div></div>
       <div class="scale"><span><span id="pmin">−60</span> kW regen</span><span>0</span><span><span id="pmax">200</span> kW</span></div>
     </div>
+    <div class="pedal">
+      <div class="prow"><span class="label">Accelerator</span><span class="num" id="pedalPct">—</span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
+      <div class="ptrack" aria-hidden="true"><div class="pgreen" id="pedalGreen"></div><div class="pfill" id="pedalFill"></div></div>
+    </div>
+    <p class="tip" id="tip" data-tone="idle" aria-live="polite">Connect the car to start coaching.</p>
   </section>
 
   <div class="grid">
@@ -152,6 +175,19 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     </section>
 
     <div class="rail">
+      <section class="panel" aria-label="Coach">
+        <h2>Coach <span>this trip</span></h2>
+        <div class="kv" style="grid-template-columns:1fr 1fr">
+          <div><div class="label">In the green</div><div class="v" id="cScore">—</div></div>
+          <div><div class="label">Pedal</div><div class="v" id="cSmooth">—</div></div>
+          <div><div class="label">Hard take-offs</div><div class="v" id="cHard">0</div></div>
+          <div><div class="label">Brake at speed</div><div class="v" id="cBrake">0</div></div>
+        </div>
+        <div class="label" style="margin-top:16px">Your speed vs Wh/mi</div>
+        <div id="speedTable" class="stable"></div>
+        <p class="note">Learned from your steady cruising and kept on this phone. The amber row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
+      </section>
+
       <section class="panel" aria-label="Battery">
         <h2>Battery</h2>
         <div class="battery"><div class="fill" id="battFill" style="width:0"></div><div class="pct" id="battPct">—</div></div>
@@ -217,6 +253,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
 <script src="decode.js"></script>
 <script src="elm.js"></script>
 <script src="sim.js"></script>
+<script src="coach.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

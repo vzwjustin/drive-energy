@@ -34,6 +34,24 @@ To try it locally on a desktop first, run `npx serve .` in this folder. Desktop 
 
 On later visits, Chrome remembers the adapter, so **Connect car** skips the chooser.
 
+## Efficiency coach (needs the adapter)
+
+The coach reads the **accelerator pedal %**, **brake pedal** and **gear** from `0x118` along with speed and pack power, and gives one short tip under the power bar:
+
+| Tip | Triggers when |
+|---|---|
+| Brake pedal at speed | You're on the brake above **8 mph**. Lifting earlier lets regen recover that energy instead |
+| Ease in | Pedal is at or above **60%** below 50 mph (a hard take-off) |
+| Smooth it out | Pedal movement averages more than about 22%/s over 3 s |
+| 5 mph slower saves X% | You're at 55 mph or more and your own data shows the next band down is at least 6% cheaper |
+| Regen on | Foot off the pedal and recovering more than 2 kW |
+| Efficient | Pedal is inside the green zone: **30%** under 25 mph, **40%** from 25–49 mph, **50%** at 50 mph and up |
+
+- **In the green** is the share of driving time with the pedal in the green zone, smooth, and off the brake.
+- **Your speed vs Wh/mi** learns consumption per 5-mph band from steady cruising only (speed changing less than 0.4 mph/s, no brake). It's saved on the phone across trips, and the amber row is your most efficient band. Tap **Reset** to start it over, for example after a tire or wheel change.
+- The green-zone limits are starting guides, not Tesla figures. Watch which tips fire on your normal commute and tell me if they feel too strict or too loose.
+- Glance only: the tip is large so you never need to tap anything while driving.
+
 ## Away from the car: Tessie mode
 
 Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter. Your car streams Fleet Telemetry to Tessie, so pack volts/amps, power and energy remaining refresh about every **10 s** while the car is awake.
@@ -49,6 +67,7 @@ Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter
 |---|---|---|
 | Power (kW), volts, amps | `0x132` | V × I; positive means drawing from the pack, negative means regen or charging |
 | Speed | `0x257` | Drive-inverter vehicle speed |
+| Accelerator %, brake, gear | `0x118` | Feeds the efficiency coach |
 | Energy used | `0x3D2` | Lifetime kWh out and in, 1 Wh resolution. Trip energy = Δout − Δin, so regen is included exactly |
 | Distance | `0x3B6` | Odometer, 0.001 km |
 | Remaining / full pack / buffer | `0x352` | Handles both the pre-2021 layout and the 2021+ multiplexed layout (auto-detected) |
@@ -94,6 +113,7 @@ Tap **Record CSV** to log one row per second: speed, power, V/A, odometer, kWh c
 - `app.js`: connection, trip math, rendering, CSV
 - `elm.js`: STN/ELM command link over Web Serial
 - `decode.js`: CAN signal decoders (usable in Node)
+- `coach.js`: pedal/brake efficiency coach and speed-band learning
 - `sim.js`: demo frame generator (the **Demo** button)
 - `sw.js`, `manifest.webmanifest`, `icon.svg`: offline install
 - `tests/decode.test.js`: run with `node tests/decode.test.js`

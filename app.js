@@ -5,7 +5,8 @@
   const $ = id => document.getElementById(id);
   const D = window.CanDecode;
   const LISTEN = Object.values(D.IDS);
-  const KEY = { trip: "de.trip.v1", tripT: "de.trip.tessie.v1", cfg: "de.cfg.v1", tok: "de.tessie.v1" };
+  const KEY = { speed: "de.speed.v1", trip: "de.trip.v1", tripT: "de.trip.tessie.v1", cfg: "de.cfg.v1", tok: "de.tessie.v1" };
+  const DEMO_SPEED = 8;
   const tripKey = src => (src === "tessie" ? KEY.tripT : KEY.trip);
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -18,6 +19,8 @@
     restartAt: 0, trip: load(KEY.trip, null), rec: null, wake: null, lastSave: 0,
     tessieTimer: null, vin: null, tessieBusy: false,
   };
+  const realCoach = Coach.createCoach({ loadBuckets: () => load(KEY.speed, {}), saveBuckets: b => store(KEY.speed, b) });
+  app.coach = realCoach;
 
   /* ---------------- status ---------------- */
   function status(kind, text) {
@@ -99,7 +102,8 @@
     resetDecoder();
     app.source = "demo"; app.sim = CanSim.createSim();
     app.savedTrip = app.trip; app.trip = null;            // demo never touches your real trip
-    const SPEED = 8;
+    app.coach = Coach.createCoach({});                    // or your learned speed table
+    const SPEED = DEMO_SPEED;
     app.simTimer = setInterval(() => { for (let k = 0; k < SPEED; k++) app.sim.step(0.05).forEach(onLine); }, 50);
     status("demo", "Demo · 8× speed");
     notice("Showing simulated frames, not your car. Tap Connect car to switch to live data.", "info");
@@ -107,6 +111,7 @@
   function stopDemo() {
     if (app.simTimer) { clearInterval(app.simTimer); app.simTimer = null; }
     if (app.source === "demo") { app.trip = app.savedTrip ?? load(KEY.trip, null); app.source = null; notice(null); }
+    app.coach = realCoach;
   }
   function resetDecoder() { dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; }
 
@@ -139,6 +144,7 @@
       }
       if ((app.source === "car" || app.source === "tessie") && now - app.lastSave > 10000) { store(tripKey(app.source), t); app.lastSave = now; }
     }
+    if (live && (app.source === "car" || app.source === "demo")) app.coach.update(L, app.pEma, app.source === "demo" ? dt * DEMO_SPEED : dt, now);
     if (app.rec && app.source && now - app.rec.last >= 1000) record(now);
     if (app.source === "car") status(live ? "live" : "quiet", live ? "Live" : "No CAN traffic");
     if (app.source === "tessie" && app.tessieAt) status(live ? "tessie" : "quiet", `Tessie · ${app.carState === "asleep" ? "car asleep · " : ""}${age(Date.now() - app.tessieAt)}`);
@@ -199,11 +205,36 @@
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
     // bricks
     renderBricks();
+    renderCoach(live);
     // footer
     $("fps").textContent = app.source ? `${app.fps} frames/s` : "";
     $("recBtn").textContent = app.rec ? `Stop recording (${app.rec.rows.length - 1} rows)` : "Record CSV";
     $("dlBtn").hidden = !(app.rec && app.rec.rows.length > 1) && !app.lastCsv;
     if (performance.now() - lastChart > 900) { lastChart = performance.now(); drawChart(t); }
+  }
+
+  function renderCoach(live) {
+    const C = app.coach, st = C.state, mph = L.speedMph ?? 0, pedal = L.pedalPct;
+    const gm = C.greenMax(mph);
+    $("pedalGreen").style.width = `${gm}%`;
+    $("pedalFill").style.width = `${pedal ?? 0}%`;
+    $("pedalFill").dataset.tone = pedal == null ? "" : pedal > gm ? "over" : "ok";
+    $("pedalPct").textContent = pedal == null ? "—" : `${Math.round(pedal)}%`;
+    $("brakePill").dataset.on = String(L.brakeOn === true);
+    const tip = $("tip");
+    if (app.source === "tessie") { tip.textContent = "Pedal coaching needs the adapter. Tessie doesn't send pedal or brake data."; tip.dataset.tone = "idle"; }
+    else if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; }
+    else if (st.tip) { tip.textContent = st.tip.text; tip.dataset.tone = st.tip.tone; }
+    const sc = C.score();
+    set("cScore", sc == null ? "—" : String(sc), sc == null ? "" : "%");
+    $("cScore").dataset.tone = sc == null ? "" : sc >= 75 ? "good" : sc >= 50 ? "warn" : "bad";
+    $("cHard").textContent = String(st.hardLaunches); $("cBrake").textContent = String(st.brakeStops);
+    $("cSmooth").textContent = st.driveSec < 5 ? "—" : st.jerk < 10 ? "Smooth" : st.jerk < 22 ? "OK" : "Choppy";
+    const { rows, sweet } = C.table(), box = $("speedTable");
+    if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile.</p>`; return; }
+    const max = Math.max(...rows.map(r => r.wh)), cur = Math.floor(mph / 5) * 5;
+    box.innerHTML = rows.map(r => `<div class="srow${sweet && r.mph === sweet.mph ? " sweet" : ""}${mph > 2 && r.mph === cur ? " cur" : ""}">
+      <span class="num">${r.mph}–${r.mph + 4}</span><span class="sbar"><i style="width:${(r.wh / max) * 100}%"></i></span><span class="num">${Math.round(r.wh)}</span></div>`).join("");
   }
 
   function renderBricks() {
@@ -377,12 +408,13 @@
   $("connectBtn").addEventListener("click", connectCar);
   $("demoBtn").addEventListener("click", () => (app.source === "demo" ? disconnect() : startDemo()));
   $("disconnectBtn").addEventListener("click", disconnect);
-  $("resetTrip").addEventListener("click", () => { app.trip = null; if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
+  $("resetTrip").addEventListener("click", () => { app.trip = null; app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
   $("tessieBtn").addEventListener("click", () => (app.source === "tessie" ? disconnect() : startTessie()));
   $("cfgTok").value = tessieToken() ? "••••••••" : "";
   $("cfgTok").addEventListener("change", e => { const v = e.target.value.trim(); if (!v || /^•+$/.test(v)) return; try { localStorage.setItem(KEY.tok, v); } catch (err) {} e.target.value = "••••••••"; notice("Tessie token saved on this device only.", "info"); });
   $("cfgTokClear").addEventListener("click", () => { try { localStorage.removeItem(KEY.tok); } catch (e) {} $("cfgTok").value = ""; if (app.source === "tessie") disconnect(); });
   $("recBtn").addEventListener("click", toggleRec);
+  $("resetSpeed").addEventListener("click", () => { app.coach.resetBuckets(); render(false); });
   $("dlBtn").addEventListener("click", download);
   document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { cfg.win = +b.dataset.w; store(KEY.cfg, cfg); syncSeg(); lastChart = 0; }));
   function syncSeg() { document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.w === cfg.win))); }

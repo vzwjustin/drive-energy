@@ -38,7 +38,11 @@
       const soc = (s.rem / s.full) * 100;
       const out = [];
 
-      let b = frame(8); setBits(b, 0, 16, v / 0.01); setBits(b, 16, 16, amps / -0.1); setBits(b, 32, 16, (amps - 822) / -0.05); out.push(line(0x132, b));
+      // Accelerator follows the power request; brake comes on for hard stops (the red light).
+      const pedal = s.mph < 0.5 && tgt === 0 ? 0 : Math.max(0, Math.min(100, (kw / 205) * 100 * 1.6 + (accel > 0 ? accel * 6 : 0)));
+      const brake = accel < -3.2 && s.mph > 3;
+      let b = frame(8); setBits(b, 32, 8, brake ? 0 : pedal / 0.4); setBits(b, 19, 2, brake ? 1 : 0); setBits(b, 21, 3, s.t < 40 ? 1 : 4); out.push(line(0x118, b));
+      b = frame(8); setBits(b, 0, 16, v / 0.01); setBits(b, 16, 16, amps / -0.1); setBits(b, 32, 16, (amps - 822) / -0.05); out.push(line(0x132, b));
       b = frame(8); setBits(b, 12, 12, (s.mph * 1.609344 + 40) / 0.08); setBits(b, 24, 9, Math.round(s.mph)); out.push(line(0x257, b));
       if (s.tick % 2 === 0) { b = frame(8); setBits(b, 0, 32, s.outKWh / 0.001); setBits(b, 32, 32, s.inKWh / 0.001); out.push(line(0x3D2, b)); }
       if (s.tick % 5 === 0) {

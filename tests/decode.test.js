@@ -52,6 +52,14 @@ t("0x401 brick voltages land at mux*3+k", () => {
   near(dec.state.bricks[36], 3.305, 1e-9, "b36"); near(dec.state.bricks[38], 3.076, 1e-9, "b38");
 });
 
+t("0x118 accelerator pedal, brake, gear", () => {
+  const dec = D.createDecoder(), b = new Array(8).fill(0);
+  D.setBits(b, 32, 8, 63); D.setBits(b, 19, 2, 1); D.setBits(b, 21, 3, 4);
+  dec.decode(0x118, b);
+  near(dec.state.pedalPct, 25.2, 1e-9, "pedal"); assert.strictEqual(dec.state.brakeOn, true); assert.strictEqual(dec.state.gear, "D");
+  D.setBits(b, 32, 8, 255); dec.decode(0x118, b); assert.strictEqual(dec.state.pedalPct, null);
+});
+
 t("odometer, totals, speed", () => {
   const dec = D.createDecoder();
   let b = new Array(4).fill(0); D.setBits(b, 0, 32, 56013.123 / 0.001); dec.decode(0x3B6, b);
@@ -72,6 +80,7 @@ t("simulator → parser → decoder end to end", () => {
   assert.ok(s.packV > 300 && s.packV < 400, "voltage");
   assert.strictEqual(dec.meta.fmt352, "new");
   assert.ok(s.bricks.every(v => v > 3 && v < 3.6), "all 108 bricks present");
+  assert.ok(s.pedalPct >= 0 && s.pedalPct <= 100 && s.gear === "D", "pedal + gear decoded");
 });
 
 console.log(`\n${pass} passed`);
