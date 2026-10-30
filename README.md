@@ -42,7 +42,9 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 - **Trip:** this trip and where its energy went, the consumption chart, drive history and your speed curve.
 - **Battery:** charge and pack readings, the charge plan, and a heatmap of all 108 bricks.
 - **Health:** prep for the car's battery health test: use the charge down to a target on an out-and-back drive.
-- **Setup:** adapter and screen options, alerts, Tessie, backup, CSV recording and diagnostics.
+- **Setup:** adapter and screen options, alerts, units, Tessie, backup, CSV recording and diagnostics.
+
+**Units (Setup):** Miles (mph, Wh/mi, °F) or Kilometers (km/h, Wh/km, °C). The choice applies to every distance, speed, consumption and temperature on screen, including the coach's tips and drive summaries. Saved data stays in miles, so switching back and forth loses nothing. Distances you type, such as the range goal and the charge plan, are taken in the unit shown. The speed curve keeps its 5-mph bands and shows them in km/h (for example 97–104 km/h). CSV recordings keep their mph and mi columns.
 
 ## Efficiency gauge (Cockpit)
 
@@ -74,8 +76,9 @@ Gets the charge down to a target (20% by default) on an out-and-back drive from 
 
 - **Plan:** from your current charge, the kWh to use and the round-trip miles at your usual Wh/mi (same basis as the charge plan), so you know how far to drive out.
 - **Start from home**, then drive. After 2 mi the app uses this drive's own Wh/mi. Tessie reports whole percents, so between steps the countdown follows the remaining kWh.
-  - On the way out, the Cockpit coach shows "66% → 20% · turn around in 12.4 mi". It's time to turn when what's left above the target only just covers the drive back on the same road.
-  - Then "Head home · 18.0 mi of driving left until 20%". This doesn't need to know which way you're driving, so turning late just means arriving a little lower.
+  - On the way out, the Cockpit coach shows "66% → 20% · turn around in 12.4 mi · ~14 min". It's time to turn when what's left above the target only just covers the drive back on the same road.
+  - Then "Head home · 18.0 mi · ~20 min of driving left until 20%". This doesn't need to know which way you're driving, so turning late just means arriving a little lower.
+  - The time is at this outing's pace: your average speed over the last few minutes, stops included. It appears once the car is moving, and the Health tab shows it as **Time at this pace**.
   - At the target: "At 20%: ready for the battery health test".
   - A rising three-tone alert marks the turn-around and the target if eyes-free alerts are on.
   - While prep is on, the eco nags stay quiet: the gauge badge reads "Health test prep", and the pedal and lift-earlier alerts don't fire. Pack warnings still do.
@@ -200,7 +203,7 @@ Rows are also saved on the phone as you go, so if the page reloads or Android cl
 
 ## Backup
 
-Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Setup → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. Settings are included: watched brick, alerts, charge plan, health-prep target, keep-awake and auto-connect. The range goal, an ongoing health prep and the Tessie token are not.
+Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Setup → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. Settings are included: watched brick, alerts, units, charge plan, health-prep target, keep-awake and auto-connect. The range goal, an ongoing health prep and the Tessie token are not.
 
 ## Verify on your car (first drive checklist)
 

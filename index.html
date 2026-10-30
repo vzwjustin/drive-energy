@@ -443,8 +443,8 @@ body.drive .overlay .sheet{font-size:16px}
             <div class="tile"><div class="label">Braking, little regen</div><div class="v" id="cBrake">0</div></div>
           </div>
         </section>
-        <section class="card miles" aria-label="Wh/mi of each recent mile">
-          <div class="chead"><span class="eyebrow">Mile by mile</span><span class="sub" id="mileNow"></span></div>
+        <section class="card miles" aria-label="Consumption, step by step">
+          <div class="chead"><span class="eyebrow"><span data-u="Unit">Mile</span> by <span data-u="unit">mile</span></span><span class="sub" id="mileNow"></span></div>
           <div class="mbars" id="mileBars"></div>
           <div class="mfoot"><span>Dashed line = target</span><span>Road grade<span class="v" id="cGrade">—</span></span></div>
         </section>
@@ -458,7 +458,7 @@ body.drive .overlay .sheet{font-size:16px}
       <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel"><svg class="ic" aria-hidden="true" style="width:13px;height:13px"><use href="#i-flag"/></svg><span id="gGoalL">Range goal</span></span><span class="gval" id="gGoalV">Set a goal</span></button>
     </div>
     <form class="goalform" id="goalForm" novalidate hidden>
-      <label for="goalMi">How many miles do you need to make? Tap one, or type your own.</label>
+      <label for="goalMi">How many <span data-u="units">miles</span> do you need to make? Tap one, or type your own.</label>
       <div class="quick" id="goalQuick">
         <button class="btn" type="button" data-mi="10">10</button><button class="btn" type="button" data-mi="20">20</button>
         <button class="btn" type="button" data-mi="30">30</button><button class="btn" type="button" data-mi="50">50</button>
@@ -503,11 +503,11 @@ body.drive .overlay .sheet{font-size:16px}
         <div class="ttl">
           <div><h2>Consumption by distance</h2><p>Rolling average against rated</p></div>
           <div class="seg" role="group" aria-label="Chart window">
-            <button type="button" data-w="5">5 mi</button><button type="button" data-w="15">15 mi</button><button type="button" data-w="30">30 mi</button>
+            <button type="button" data-w="5">5 <span data-u="d">mi</span></button><button type="button" data-w="15">15 <span data-u="d">mi</span></button><button type="button" data-w="30">30 <span data-u="d">mi</span></button>
           </div>
         </div>
         <div id="chart"></div>
-        <div class="legend"><span><b></b>Rolling 1-mile average (Wh/mi)</span><span><b class="r"></b>Rated consumption</span></div>
+        <div class="legend"><span><b></b><span id="legendAvg">Rolling 1-mile average (Wh/mi)</span></span><span><b class="r"></b>Rated consumption</span></div>
       </section>
 
       <section class="card c6" aria-label="Drives">
@@ -517,7 +517,7 @@ body.drive .overlay .sheet{font-size:16px}
       </section>
 
       <section class="card c6" aria-label="Speed vs consumption">
-        <div class="ttl"><div><h2>Your speed vs Wh/mi</h2><p id="tempBand"></p></div></div>
+        <div class="ttl"><div><h2>Your speed vs <span data-u="e">Wh/mi</span></h2><p id="tempBand"></p></div></div>
         <div id="speedTable"></div>
         <p class="note">Learned from your steady cruising, split by outside temperature. The amber point and row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
       </section>
@@ -541,9 +541,9 @@ body.drive .overlay .sheet{font-size:16px}
       </section>
 
       <section class="card c7" aria-label="Charge plan">
-        <div class="ttl"><div><h2>Charge plan</h2><p>At your real Wh/mi, not rated</p></div></div>
+        <div class="ttl"><div><h2>Charge plan</h2><p>At your real <span data-u="e">Wh/mi</span>, not rated</p></div></div>
         <div class="cfg">
-          <label for="planMi">Miles before next charge<input class="field" id="planMi" type="text" inputmode="numeric" autocomplete="off"></label>
+          <label for="planMi"><span><span data-u="Units">Miles</span> before next charge</span><input class="field" id="planMi" type="text" inputmode="numeric" autocomplete="off"></label>
           <label for="planRes">Arrive with at least<select class="field" id="planRes"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="30">30%</option></select></label>
         </div>
         <div class="rows" id="planRows" style="margin-top:14px"></div>
@@ -604,6 +604,7 @@ body.drive .overlay .sheet{font-size:16px}
           <div style="display:flex;align-items:end"><button class="btn" id="alertTest" type="button">Test alert</button></div>
           <label for="cfgBrick">Watch brick #<input class="field" id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
           <label for="cfgBase">Brick numbering<select class="field" id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
+          <label for="cfgUnits">Units<select class="field" id="cfgUnits"><option value="mi">Miles (mph, Wh/mi, °F)</option><option value="km">Kilometers (km/h, Wh/km, °C)</option></select></label>
         </div>
         <div class="btnrow" style="margin-top:14px"><button class="btn" id="chooseBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button></div>
         <p class="note">Picks a different Bluetooth adapter. Chrome then forgets the others, so auto-connect can't open the wrong one.</p>
@@ -647,14 +648,15 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v31</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v32</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=31"></script>
-<script src="elm.js?v=31"></script>
-<script src="sim.js?v=31"></script>
-<script src="coach.js?v=31"></script>
-<script src="drives.js?v=31"></script>
-<script src="stops.js?v=31"></script>
-<script src="app.js?v=31"></script>
+<script src="decode.js?v=32"></script>
+<script src="elm.js?v=32"></script>
+<script src="sim.js?v=32"></script>
+<script src="units.js?v=32"></script>
+<script src="coach.js?v=32"></script>
+<script src="drives.js?v=32"></script>
+<script src="stops.js?v=32"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

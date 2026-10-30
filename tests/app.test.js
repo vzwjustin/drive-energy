@@ -30,7 +30,7 @@ function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock =
   };
   ctx.window = ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ["decode.js", "elm.js", "sim.js", "coach.js", "drives.js", "stops.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f });
+  for (const f of ["decode.js", "elm.js", "sim.js", "units.js", "coach.js", "drives.js", "stops.js", "app.js"]) vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, { filename: f });
   return {
     el: id => (els[id] ||= el()), text: id => els[id].textContent, html: id => els[id].innerHTML, click: id => els[id].on.click(),
     fire: type => (docOn[type] || []).forEach(f => f({})), document, store, files, reloads: () => reloads,
@@ -76,7 +76,7 @@ function fakeSerial(...ports) {
 // car: readings a test can change between polls. Commands (POSTs) are recorded in cmds; one named in refuse gets
 // { result: false, reason } back, the rest succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false };
+  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false, speed: 0 };
   const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
@@ -86,7 +86,7 @@ function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
     }
     const body = /vehicles/.test(url) ? { results: cars }
       : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, nominal_full_pack_energy: 75, battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
-      : { state: "online", drive_state: { power: 0, speed: 0 }, vehicle_state: { odometer: car.odometer }, charge_state: {},
+      : { state: "online", drive_state: { power: 0, speed: car.speed }, vehicle_state: { odometer: car.odometer }, charge_state: {},
           climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
     return { ok: true, status: 200, json: async () => body };
   };
@@ -410,6 +410,58 @@ const test = async (name, fn) => {
     app.stop(); app.el("chipText").textContent = "";        // every app timer gone, as when Chrome throttles a background page
     await wait(1500);
     assert.strictEqual(app.text("chipText"), "Live", "a frame ran the update the stalled timer missed");
+  });
+
+  await test("health test prep: the banner and the tab add the driving time at this outing's pace", async () => {
+    const tes = fakeTessie(), drives = [{ id: "1", t0: 1, mi: 40, kwh: 10, wh: 250, score: 80 }, { id: "2", t0: 2, mi: 40, kwh: 10, wh: 250, score: 80 }];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300);
+    app.click("hStart"); await wait(300);
+    assert.strictEqual(app.text("tip"), "66% → 20% · turn around in 69.0 mi.", "no time before the car has moved");
+    // Same numbers as the walk-through above, now at a steady 25 mph: 58.75 mi takes 2 h 21 min.
+    Object.assign(tes.car, { odometer: 10010, energy: 47.5, level: 62, speed: 25 }); await wait(1300);
+    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 58.8 mi · ~2 h 21 min.");
+    assert.ok(/58\.8 mi/.test(app.html("hRows")) && /Time at this pace<\/span><span>~2 h 21 min/.test(app.html("hRows")), app.html("hRows"));
+    app.el("cfgUnits").on.change({ target: { value: "km" } });
+    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 94.5 km · ~2 h 21 min.");
+    app.stop();
+  });
+
+  await test("units: Kilometers converts the screen and typed distances; saved data stays in miles", async () => {
+    const tes = fakeTessie(), drives = [{ id: "1", t0: 1, mi: 40, kwh: 10, wh: 250, score: 80 }, { id: "2", t0: 2, mi: 40, kwh: 10, wh: 250, score: 80 }];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { units: "km", tab: "battery" } }, fetch: tes.fetch, scale: 20 });
+    const cfg = () => JSON.parse(app.store.get("de.cfg.v1"));
+    assert.strictEqual(app.el("planMi").value, "48", "the 30 mi default plan, in km");
+    assert.ok(/64\.4 km/.test(app.html("driveList")) && /155 Wh\/km/.test(app.html("driveList")), app.html("driveList"));
+    app.click("exportBtn"); await wait(50);
+    assert.strictEqual(JSON.parse(await app.files[0].text()).settings.units, "km", "the setting is backed up");
+    app.click("tessieBtn"); await wait(1300);
+    assert.strictEqual(app.html("proj"), "322<small>km</small>", "200 mi rated range");
+    assert.ok(/Energy for 48 km/.test(app.html("planRows")) && /at 155 Wh\/km/.test(app.html("planRows")), app.html("planRows"));
+    app.el("planMi").on.change({ target: { value: "100" } });
+    assert.ok(Math.abs(cfg().plan.mi - 62.137) < 0.001, "100 km plan kept as miles");
+    app.el("goalMi").value = "50"; app.el("goalForm").on.submit({ preventDefault() {} });
+    assert.ok(Math.abs(cfg().goal.mi - 31.069) < 0.001, "50 km goal kept as miles");
+    assert.strictEqual(app.text("gGoalL"), "Goal 50 km · 50.0 left");
+    app.el("cfgUnits").on.change({ target: { value: "mi" } });
+    assert.strictEqual(cfg().units, "mi"); assert.strictEqual(app.html("proj"), "200<small>mi</small>");
+    assert.strictEqual(app.el("planMi").value, "62"); assert.strictEqual(app.text("gGoalL"), "Goal 31 mi · 31.1 left");
+    assert.ok(/40\.0 mi/.test(app.html("driveList")) && /250 Wh\/mi/.test(app.html("driveList")));
+    app.stop();
+  });
+
+  await test("units: coach tips and drive habits use the picked units", async () => {
+    const Units = require("../units.js"), Coach = require("../coach.js"), Drives = require("../drives.js");
+    try {
+      Units.set("km");
+      const tips = Coach.cues({ tMin: 5, outsideC: 2, mph: 75, kw: 20 }).map(q => q.text).join(" | ");
+      assert.ok(/Pack is cold \(5 °C\)/.test(tips) && /Cold air \(2 °C\): higher Wh\/km/.test(tips) && /Above ~110 km\/h/.test(tips), tips);
+      assert.strictEqual(Drives.habit({ cruiseBand: 70, sweetBand: 55 }).text, "Most of this drive was at 113–120 km/h. Your data says 89–96 km/h is your most efficient band.");
+      assert.strictEqual(Units.tempBand("40-59"), "4–15 °C");
+      Units.set("mi");
+      assert.ok(/Pack is cold \(41 °F\)/.test(Coach.cues({ tMin: 5 }).map(q => q.text).join(" ")));
+      assert.strictEqual(Drives.habit({ cruiseBand: 70, sweetBand: 55 }).text, "Most of this drive was at 70–74 mph. Your data says 55–59 mph is your most efficient band.");
+    } finally { Units.set("mi"); }
   });
 
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);

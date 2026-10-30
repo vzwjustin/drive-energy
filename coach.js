@@ -7,6 +7,7 @@
   const ECO_LOW = 15, ECO_HIGH = 40, HYST = 1;               // pedal %, EcoLab PEDAL_ECO_LOW/HIGH, ZONE_HYSTERESIS
   const LEVEL_ORDER = { WARN: 0, GOOD: 1, TIP: 2 };          // EcoLab sort: warnings first, then good, then tips
   const MPH_PER_MS = 2.2369363;
+  const U = typeof module !== "undefined" && module.exports ? require("./units.js") : root.Units;
 
   function rawZone(p) {
     if (p == null || !isFinite(p)) return "OFF";
@@ -29,10 +30,10 @@
     return edge != null && Math.abs(p - edge) < HYST ? prev : z;
   }
 
-  const tF = c => Math.round((c * 9) / 5 + 32);
+  const deg = c => `${Math.round(U.temp(c))} ${U.t}`;
   const tempBand = c => (c == null || !isFinite(c) ? "x" : (f => (f < 40 ? "<40" : f < 60 ? "40-59" : f < 80 ? "60-79" : "80+"))((c * 9) / 5 + 32));
 
-  /** EcoLab RangeCoach.cues, imperial units. Returns cues most important first; a coasting reminder is always last. */
+  /** EcoLab RangeCoach.cues, in the units picked in Setup. Returns cues most important first; a coasting reminder is always last. */
   function cues(x) {
     const { pedal, kw, mph, brake, soc, tMin, tMax, hvacKw, regenLimitKw, accelMs2, grade, outsideC, cruiseOn } = x;
     const kmh = mph != null ? Math.abs(mph) * 1.609344 : null;
@@ -41,10 +42,10 @@
     const add = (level, text, kind) => out.push({ level, text, kind });
 
     if (tMin != null) {
-      if (tMin < 10 && (kw ?? 0) > 40) add("WARN", `Pack is cold (${tF(tMin)} °F) and drawing ${Math.round(kw)} kW. Ease off: hard draw on a cold pack wears it and wastes range.`, "pack.coldDraw");
-      else if (tMin < 10) add("TIP", `Pack is cold (${tF(tMin)} °F): regen is reduced until it warms, so lift off earlier.`, "pack.cold");
+      if (tMin < 10 && (kw ?? 0) > 40) add("WARN", `Pack is cold (${deg(tMin)}) and drawing ${Math.round(kw)} kW. Ease off: hard draw on a cold pack wears it and wastes range.`, "pack.coldDraw");
+      else if (tMin < 10) add("TIP", `Pack is cold (${deg(tMin)}): regen is reduced until it warms, so lift off earlier.`, "pack.cold");
     }
-    if (tMax != null && tMax > 45) add("WARN", `Pack is hot (${tF(tMax)} °F). Smooth, lower-power driving keeps it from heating further.`, "pack.hot");
+    if (tMax != null && tMax > 45) add("WARN", `Pack is hot (${deg(tMax)}). Smooth, lower-power driving keeps it from heating further.`, "pack.hot");
     if (soc != null) {
       if (soc < 15 && (kw ?? 0) > 60) add("WARN", `Low charge (${Math.floor(soc)}%) at ${Math.round(kw)} kW. Lighter pedal protects the pack and range.`, "soc.lowDraw");
       if (soc > 95 && moving) add("TIP", `Near full (${Math.floor(soc)}%): regen is limited, so brake gently and plan stops early.`, "soc.full");
@@ -74,12 +75,12 @@
       if (grade < -2 && pedal != null && pedal >= 2) add("TIP", "Downhill: lift off the pedal and let regen and gravity do the work.", "grade.downOn");
     }
     if (outsideC != null) {
-      if (outsideC < 5) add("TIP", `Cold air (${tF(outsideC)} °F): higher Wh/mi is normal. Precondition while plugged in, and use seat heat over cabin heat.`, "air.cold");
-      if (outsideC > 30 && (hvacKw ?? 0) > 2) add("TIP", `Hot day (${tF(outsideC)} °F): A/C is a big share of the draw. Park in shade and precondition while plugged in.`, "air.hot");
+      if (outsideC < 5) add("TIP", `Cold air (${deg(outsideC)}): higher ${U.e} is normal. Precondition while plugged in, and use seat heat over cabin heat.`, "air.cold");
+      if (outsideC > 30 && (hvacKw ?? 0) > 2) add("TIP", `Hot day (${deg(outsideC)}): A/C is a big share of the draw. Park in shade and precondition while plugged in.`, "air.hot");
     }
     if (cruiseOn && moving) add("TIP", "Cruise is holding speed. Set it at or under the limit; on rolling hills your own light pedal can use less energy.", "cruise");
     if (hvacKw != null && hvacKw > 3) add("TIP", `Climate is using ${hvacKw.toFixed(1)} kW. Seat heat or a lower setpoint costs less range.`, "climate");
-    if (kmh != null && kmh > 112) add("TIP", "Above ~70 mph aero drag rises sharply: a few mph less adds noticeable range.", "aero");
+    if (kmh != null && kmh > 112) add("TIP", `Above ~${U.metric ? "110 km/h" : "70 mph"} aero drag rises sharply: a few ${U.s} less adds noticeable range.`, "aero");
     out.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
     out.push({ level: "TIP", text: "For max range: look ahead, lift off the pedal early and coast to slow down instead of braking late.", kind: "coast", standing: true });
     return out;
@@ -140,7 +141,7 @@
         if (here && slower && mph >= 55 && here.wh > slower.wh * 1.06 && !list.some(q => q.level === "WARN")) {
           const at = list.findIndex(q => q.level === "TIP");     // keeps EcoLab order: warnings, good, then tips
           list.splice(at < 0 ? list.length : at, 0, { level: "TIP", kind: "speed.data",
-            text: `5 mph slower saves about ${Math.round((1 - slower.wh / here.wh) * 100)}% here (${Math.round(here.wh)} → ${Math.round(slower.wh)} Wh/mi in your data).` });
+            text: `${Math.round(U.speed(5))} ${U.s} slower saves about ${Math.round((1 - slower.wh / here.wh) * 100)}% here (${Math.round(U.wh(here.wh))} → ${Math.round(U.wh(slower.wh))} ${U.e} in your data).` });
         }
       } else { c.wasHeavy = false; c.wasFriction = false; }
 

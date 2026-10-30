@@ -3,6 +3,7 @@
    or when the driver taps End drive. Pure logic: the app feeds it cumulative counters each tick. */
 (function (root) {
   "use strict";
+  const U = typeof module !== "undefined" && module.exports ? require("./units.js") : root.Units;
   const KEEP = 500;                                         // ~300 KB of history in localStorage
 
   // Same formula as the live score: 70% consumption vs rated (100 at ≤85%, 0 at ≥150%), 30% pedal in range.
@@ -20,7 +21,7 @@
     if (used > 0.2 && d.accelKWh / used > 0.3) return { tone: "warn", text: `Speeding up took ${Math.round((d.accelKWh / used) * 100)}% of the driving energy. Build speed gradually and lift early so you don't brake away what you spent.` };
     if (d.pedalPct != null && d.pedalPct < 60 && d.heavy >= 3) return { tone: "warn", text: `Ease take-offs: ${d.heavy} heavy-pedal moments. Up to 40% pedal gets most of the speed for far less energy.` };
     if (d.cruiseBand != null && d.sweetBand != null && d.cruiseBand >= d.sweetBand + 10)
-      return { tone: "warn", text: `Most of this drive was at ${d.cruiseBand}–${d.cruiseBand + 4} mph. Your data says ${d.sweetBand}–${d.sweetBand + 4} mph is your most efficient band.` };
+      return { tone: "warn", text: `Most of this drive was at ${U.band(d.cruiseBand)}. Your data says ${U.band(d.sweetBand)} is your most efficient band.` };
     if (d.climateKWh != null && d.kwh > 0 && d.climateKWh / d.kwh > 0.25)
       return { tone: "warn", text: `Climate used ${Math.round((d.climateKWh / d.kwh) * 100)}% of this drive's energy. Precondition while plugged in and lean on seat heat.` };
     if (d.pedalPct != null && d.pedalPct < 60) return { tone: "warn", text: `Pedal was in the 15–40% range ${d.pedalPct}% of the time. Aim for 70%+: smooth, moderate inputs.` };
