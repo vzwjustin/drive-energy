@@ -106,6 +106,8 @@ h1{font:700 16px/1.2 var(--f-ui);letter-spacing:-.01em;margin:0}
 .ttl p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
 .chead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.btn:disabled{opacity:.45;cursor:default}
+#burnMsg[data-tone="good"]{color:var(--regen)} #burnMsg[data-tone="bad"]{color:var(--bad)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
 .tile{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 13px;min-width:0}
 .tile .v,.kpi .v{font:700 21px/1.2 var(--f-num);font-variant-numeric:tabular-nums;margin-top:3px}
@@ -342,6 +344,7 @@ body.drive .overlay .sheet{font-size:16px}
 <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
 <symbol id="i-chart-column" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
 <symbol id="i-battery-charging" viewBox="0 0 24 24"><path d="M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/><path d="M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1"/><path d="m11 7-3 5h4l-3 5"/><line x1="22" x2="22" y1="11" y2="13"/></symbol>
+<symbol id="i-heart-pulse" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></symbol>
 <symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
 <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></symbol>
 <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
@@ -376,6 +379,7 @@ body.drive .overlay .sheet{font-size:16px}
       <button class="tab" id="tab-cockpit" type="button" role="tab" aria-controls="view-cockpit" aria-selected="true"><svg class="ic" aria-hidden="true"><use href="#i-gauge"/></svg><span class="long">Live cockpit</span><span class="short">Cockpit</span></button>
       <button class="tab" id="tab-trip" type="button" role="tab" aria-controls="view-trip" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-chart-column"/></svg><span class="long">Trip &amp; efficiency</span><span class="short">Trip</span></button>
       <button class="tab" id="tab-battery" type="button" role="tab" aria-controls="view-battery" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-battery-charging"/></svg><span class="long">Pack &amp; bricks</span><span class="short">Battery</span></button>
+      <button class="tab" id="tab-health" type="button" role="tab" aria-controls="view-health" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-heart-pulse"/></svg><span class="long">Health test prep</span><span class="short">Health</span></button>
       <button class="tab" id="tab-setup" type="button" role="tab" aria-controls="view-setup" aria-selected="false" tabindex="-1"><svg class="ic" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span class="long">Adapter &amp; setup</span><span class="short">Setup</span></button>
     </nav>
     <div class="topstats"><span>Charge <b id="topSoc">—</b></span><span>Pack <b id="topTemp">—</b></span></div>
@@ -560,6 +564,34 @@ body.drive .overlay .sheet{font-size:16px}
     </div>
   </section>
 
+  <!-- ============ Health test prep ============ -->
+  <section class="view" id="view-health" role="tabpanel" aria-labelledby="tab-health" hidden>
+    <div class="g12">
+      <section class="card c7" aria-label="Health test prep">
+        <div class="ttl"><div><h2>Health test prep</h2><p>Use the charge down on an out-and-back drive from home</p></div></div>
+        <div class="cfg">
+          <label for="hTarget">Get down to<select class="field" id="hTarget"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="25">25%</option><option value="30">30%</option></select></label>
+          <div style="display:flex;align-items:end"><button class="btn primary" id="hStart" type="button">Start from home</button></div>
+        </div>
+        <div class="rows" id="hRows" style="margin-top:14px"></div>
+        <p class="note">The Cockpit coach tells you when to turn around, then how far is left. A rising three-tone alert marks both if eyes-free alerts are on (Setup).</p>
+      </section>
+
+      <section class="card c5" aria-label="Burn faster">
+        <div class="ttl"><div><h2>Burn faster</h2><p>Switches climate on through Tessie</p></div></div>
+        <div class="btnrow">
+          <button class="btn" id="burnFull" type="button" disabled>Climate on full</button>
+          <button class="btn" id="burnDefrost" type="button" disabled>Max defrost</button>
+          <button class="btn" id="burnCamp" type="button" disabled>Finish parked</button>
+          <button class="btn" id="burnOff" type="button" disabled>Turn off</button>
+        </div>
+        <p class="note" id="burnMsg" aria-live="polite"></p>
+        <p class="note">Climate on full: AC at LO when it's warm out, HI plus seat and wheel heaters when it's cold. Max defrost runs heat and AC together, the most the cabin can use. Finish parked turns on Camp mode if you're home above the target.</p>
+        <p class="note">Needs your Tessie token (Setup). Only climate commands are sent. At the target, on Stop, or after a day, the app switches off what it switched on and puts the cabin temperature back. It can only do that while this page is open.</p>
+      </section>
+    </div>
+  </section>
+
   <!-- ============ Setup ============ -->
   <section class="view" id="view-setup" role="tabpanel" aria-labelledby="tab-setup" hidden>
     <div class="g12">
@@ -615,14 +647,14 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v29</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v30</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=29"></script>
-<script src="elm.js?v=29"></script>
-<script src="sim.js?v=29"></script>
-<script src="coach.js?v=29"></script>
-<script src="drives.js?v=29"></script>
-<script src="stops.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="decode.js?v=30"></script>
+<script src="elm.js?v=30"></script>
+<script src="sim.js?v=30"></script>
+<script src="coach.js?v=30"></script>
+<script src="drives.js?v=30"></script>
+<script src="stops.js?v=30"></script>
+<script src="app.js?v=30"></script>
 </body>
 </html>

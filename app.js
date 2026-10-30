@@ -52,6 +52,8 @@
       const r = dec.decode(f.id, f.bytes); app.frames++; app.lastFrameAt = performance.now();
       const s = (app.idStats[f.id] ||= { n: 0, ok: 0, last: 0, sample: "" });
       s.n++; if (r) s.ok++; s.last = app.lastFrameAt; s.sample = line.replace(/\s+/g, "");
+      // With another app in front Chrome may run timers once a minute; frames keep arriving, so let them drive the update.
+      if (app.lastFrameAt - app.lastTick > 1100) tick();
       return;
     }
     app.rawLines.push(`${new Date().toLocaleTimeString()}  ${line}`); if (app.rawLines.length > 30) app.rawLines.shift();
@@ -296,6 +298,7 @@
     set("proj", usable != null && basis > 50 ? fx((usable * 1000) / basis) : fx(L.ratedRangeMi), "mi");
     $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(basis)} Wh/mi · rated ${fx(L.ratedRangeMi)} mi` : "rated range";
     renderGuide(usable, basis);
+    app.hs = healthNow();
     renderGauge(live, tripAvg);
     renderScore(tripMi, tripAvg);
     // battery
@@ -325,6 +328,7 @@
       if (cfg.tab === "trip") renderBreakdown(t);
       if (cfg.tab === "battery") { renderPlan(usable); renderBricks(); }
       if (cfg.tab === "cockpit") renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh());
+      if (cfg.tab === "health") renderHealth(cfg.health ? app.hs : burnPlan(null));
     }
     renderCoach(live, slow);
     // footer
@@ -367,6 +371,19 @@
     // Right after a slowdown, show its result in the second coaching line for 8 s.
     if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 / (app.source === "demo" ? DEMO_SPEED : 1) && app.source)
       $("tip2").textContent = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
+    // Health test prep takes over the banner: where to turn around, then how far is left to the target.
+    if (cfg.health && app.source && live) {
+      const h = cfg.health, s = app.hs, p = app.pEma;
+      const text = !s ? "Health test prep: waiting for the charge level…"
+        : h.phase === "done" ? `At ${h.target}%: ready for the battery health test.`
+        : h.phase === "back" ? `Head home · ${fx(s.left, 1)} mi of driving left until ${h.target}%.`
+        : s.turnIn <= 0.2 ? "Turn around now and head home."
+        : `${Math.round(s.soc)}% → ${h.target}% · turn around in ${fx(s.turnIn, 1)} mi.`;
+      tip.textContent = text; tip.dataset.tone = h.phase === "done" ? "good" : "warn";
+      tip2.textContent = s && p > 0.3 && h.phase !== "done" ? `Using ${fx(p, 1)} kW · about ${Math.round(p / s.k)}% an hour${h.burn && h.burn.did.length ? " · climate boosted" : ""}` : "";
+      const kind = `health.${h.phase}.${s && s.turnIn <= 0.2 ? 1 : 0}`;
+      if (app.saidKind !== kind) { app.saidKind = kind; $("tipSay").textContent = text; }
+    }
     if (slow || cfg.tab !== "trip") return;                // the speed curve lives on the Trip tab
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
     $("tempBand").textContent = band === "x" ? "" : `at ${band} °F outside`;
@@ -410,12 +427,13 @@
   $("planRes").addEventListener("change", e => { cfg.plan.res = +e.target.value; store(KEY.cfg, cfg); app.forceSlow = true; render(true); });
   // Wh/mi across several drives, weighted by distance: a half-mile hop doesn't count as much as a highway run.
   const whOf = list => { const mi = list.reduce((p, d) => p + d.mi, 0), kwh = list.reduce((p, d) => p + d.kwh, 0); return mi > 0 && kwh > 0 ? (kwh * 1000) / mi : null; };
-  function renderPlan(usable) {
-    const full = L.fullPackKWh, box = $("planRows");
+  function planWh() {
     const recent = drives.history.slice(0, 7), recentWh = recent.length >= 2 ? whOf(recent) : null;
     const t = app.trip, tripMi = t ? t.lastOdo - t.odo0 : 0, tripWh = tripMi > 2 && t.drive > 0 ? (t.drive * 1000) / tripMi : null;
-    const wh = recentWh ?? tripWh ?? ratedWh();
-    const basis = recentWh ? `your last ${recent.length} drives` : tripWh ? "this trip" : "rated";
+    return { wh: recentWh ?? tripWh ?? ratedWh(), basis: recentWh ? `your last ${recent.length} drives` : tripWh ? "this trip" : "rated" };
+  }
+  function renderPlan(usable) {
+    const full = L.fullPackKWh, box = $("planRows"), { wh, basis } = planWh();
     if (!full || !wh) { box.innerHTML = `<p class="note">Needs the full-pack reading from the car: connect the adapter or Tessie.</p>`; return; }
     const needKWh = (cfg.plan.mi * wh) / 1000, needPct = Math.min(100, Math.ceil((needKWh / full) * 100 + cfg.plan.res));
     const soc = L.socUI ?? L.uiSOC;
@@ -662,9 +680,149 @@
   document.querySelectorAll("#goalQuick [data-mi]").forEach(b => b.addEventListener("click", () => setGoal(+b.dataset.mi)));
   $("goalForm").addEventListener("submit", e => { e.preventDefault(); setGoal(Math.round(parseFloat(String($("goalMi").value).replace(/[^0-9.]/g, "")))); });
   $("goalClear").addEventListener("click", () => { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); });
+  /* ---------------- battery health test prep ----------------
+     Use the charge down to a target (20%) on an out-and-back drive from home before the car's battery health test.
+     Turn around when what's left above the target only just covers the drive back at the Wh/mi this drive is using:
+     each extra mile out costs two, there and back. Tessie can switch climate on to burn faster. Only climate
+     commands are ever sent, and Turn off undoes only what the app switched on. */
+  const kwhPerPct = () => (L.fullPackKWh > 10 ? (L.fullPackKWh - (L.bufferKWh ?? 0)) / 100 : null);
+  const healthOn = () => !!cfg.health && cfg.health.phase !== "done";
+  function burnPlan(h) {                                  // h: the running prep, or null to plan from here
+    const soc = L.socUI ?? L.uiSOC, k = kwhPerPct(), target = h ? h.target : cfg.healthTarget || 20;
+    if (soc == null || !k) return null;
+    const out = h && h.odo0 != null && L.odoMi != null ? Math.max(0, L.odoMi - h.odo0) : 0;
+    const used = h && h.e0 != null && L.energyRemainingKWh != null ? h.e0 - L.energyRemainingKWh : 0;
+    const own = out >= 2 && used > 0, p = planWh(), wh = own ? (used * 1000) / out : p.wh;   // this drive's own Wh/mi after 2 mi
+    if (!wh) return null;
+    const above = Math.max(0, (soc - target) * k), left = (above * 1000) / wh;
+    return { soc, k, target, out, wh, basis: own ? "this drive" : p.basis, above, left, turnIn: (left - out) / 2 };
+  }
+  // Runs with every screen update while a prep is on: fills in the start readings, then calls the turn-around and the target.
+  function healthNow() {
+    const h = cfg.health; if (!h) return null;
+    // One outing: clears itself after a day, and a prep tried out in Demo doesn't carry over to the car (or back).
+    if (Date.now() - h.at > 864e5 || (app.source && !!h.demo !== (app.source === "demo"))) { healthStop(); return null; }
+    if (h.odo0 == null && L.odoMi != null) { h.odo0 = L.odoMi; store(KEY.cfg, cfg); }
+    if (h.e0 == null && L.energyRemainingKWh != null) { h.e0 = L.energyRemainingKWh; store(KEY.cfg, cfg); }
+    const s = burnPlan(h); if (!s) return null;
+    if (h.phase !== "done" && s.soc <= h.target) { h.phase = "done"; store(KEY.cfg, cfg); fireAlert("turn"); burnOff(); }
+    else if (h.phase === "out" && s.out > 0.5 && s.turnIn <= 0) { h.phase = "back"; store(KEY.cfg, cfg); fireAlert("turn"); }
+    return s;
+  }
+  async function healthStop() {
+    if (app.burnBusy) { burnMsg("Wait for the climate commands to finish, then tap Stop again.", "bad"); return; }
+    const b = cfg.health && cfg.health.burn;
+    cfg.health = null; store(KEY.cfg, cfg); app.forceSlow = true;
+    await burnOff(b);
+  }
+  function renderHealth(s) {
+    const h = cfg.health, box = $("hRows"), on = healthOn();
+    $("hStart").textContent = !h ? "Start from home" : h.phase === "done" ? "Done" : "Stop";
+    $("hStart").classList.toggle("primary", !h);
+    ["burnFull", "burnDefrost", "burnCamp"].forEach(id => ($(id).disabled = !on || !!app.burnBusy || app.source === "demo"));   // Demo never commands the real car
+    $("burnOff").disabled = !(h && h.burn && h.burn.did.length) || !!app.burnBusy;
+    if (!s) { box.innerHTML = `<p class="note">${app.source ? "Waiting for the charge level and the full-pack reading…" : "Needs the charge level: connect the adapter or start Tessie."}</p>`; return; }
+    const p = app.pEma, using = p > 0.3 ? `<div><span>Using now</span><span>${fx(p, 1)} kW · about ${Math.round(p / s.k)}% an hour</span></div>` : "";
+    if (!h) {
+      box.innerHTML = s.soc <= s.target ? `<div><span>Now at ${Math.round(s.soc)}%</span><span>already at ${s.target}% or below</span></div>` : `
+        <div><span>Now at ${Math.round(s.soc)}%</span><span>${Math.round(s.soc - s.target)}% to use · ${s.above.toFixed(1)} kWh</span></div>
+        <div><span>Round trip</span><span>~${Math.round(s.left)} mi at ${Math.round(s.wh)} Wh/mi</span></div>
+        <div><span>Drive out</span><span class="planbig">~${Math.round(s.left / 2)} mi</span></div>
+        <p class="note" style="margin:6px 0 0">Then turn around and head home. Based on ${s.basis}; after 2 mi it uses this drive's own Wh/mi, so climate on full or a faster road brings the turn-around point closer.</p>`;
+      return;
+    }
+    const head = h.phase === "done" ? `<div><span>Ready</span><span class="planbig" data-tone="good">At ${h.target}%</span></div>`
+      : h.phase === "back" ? `<div><span>Heading home</span><span class="planbig">${fx(s.left, 1)} mi to ${h.target}%</span></div>`
+      : `<div><span>Turn around in</span><span class="planbig">${s.turnIn <= 0.2 ? "now" : `${fx(s.turnIn, 1)} mi`}</span></div>`;
+    box.innerHTML = `${head}
+      <div><span>Now at</span><span>${fx(s.soc, 1)}% → ${h.target}% · ${s.above.toFixed(1)} kWh to use</span></div>
+      <div><span>Driven since start</span><span>${fx(s.out, 1)} mi at ${Math.round(s.wh)} Wh/mi${s.basis === "this drive" ? "" : " (planned)"}</span></div>
+      ${h.phase === "done" ? "" : using}
+      ${h.phase === "done" ? `<p class="note" style="margin:6px 0 0">The charge is down to ${h.target}%: ready for the battery health test.</p>` : ""}`;
+  }
+
+  // Tessie commands. One the car refuses comes back { result: false, reason }.
+  async function tessieCar() {
+    if (app.vin) return app.vin;
+    if (!app.cmdVin) {
+      const list = (await tget("vehicles?only_active=true")).results || [];
+      const v = list.find(x => x.vin === cfg.tessieVin) || list[0];
+      if (!v) throw new Error("no vehicles on this Tessie account");
+      app.cmdVin = v.vin;
+    }
+    return app.cmdVin;
+  }
+  async function tcmd(name, q) {
+    const r = await fetch(`https://api.tessie.com/${await tessieCar()}/command/${name}${q ? `?${q}` : ""}`, { method: "POST", headers: { Authorization: `Bearer ${tessieToken()}` } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.result !== true) throw new Error(j.reason || j.error || (r.ok ? "the car didn't accept it" : `HTTP ${r.status}`));
+  }
+  const burnMsg = (text, tone) => { $("burnMsg").textContent = text; $("burnMsg").dataset.tone = tone || ""; };
+  // full: climate flat out (AC at LO when it's warm out; HI plus seat and wheel heaters when it's cold).
+  // defrost: heater and AC together with the fan maxed. camp: keeps climate running with the car parked.
+  async function burn(kind) {
+    const h = cfg.health; if (!h || app.burnBusy || app.source === "demo") return;
+    if (!tessieToken()) { showTab("setup"); $("cfgTok").focus(); notice("Paste your Tessie API token in Setup so the app can switch climate on.", "warn"); return; }
+    const b = (h.burn ||= { did: [] });
+    let step = "Reading climate";
+    const run = async (label, name, q, undo) => { step = label; burnMsg(`${label}…`); await tcmd(name, q); if (!b.did.includes(undo)) { b.did.push(undo); store(KEY.cfg, cfg); } };
+    app.burnBusy = true; app.forceSlow = true;
+    try {
+      if (!("prevC" in b)) {                                // what to put back afterwards
+        const cl = (await tget(`${await tessieCar()}/state?use_cache=true`)).climate_state || {};
+        b.prevC = cl.driver_temp_setting ?? null; b.wasOn = !!cl.is_climate_on; b.cold = (cl.outside_temp ?? L.outsideC ?? 20) < 15;
+        store(KEY.cfg, cfg);
+      }
+      await run("Climate on", "start_climate", "", "climate");
+      if (kind === "full") {
+        await run(`Cabin to ${b.cold ? "HI" : "LO"}`, "set_temperatures", `temperature=${b.cold ? 28 : 15}`, "temp");
+        if (b.cold) {
+          await run("Driver seat heater", "set_seat_heat", "seat=front_left&level=3", "seats");
+          await run("Passenger seat heater", "set_seat_heat", "seat=front_right&level=3", "seats");
+          await run("Steering wheel heater", "start_steering_wheel_heater", "", "wheel");
+        }
+      }
+      if (kind === "defrost") await run("Max defrost", "start_max_defrost", "", "defrost");
+      if (kind === "camp") await run("Camp mode", "set_climate_keeper_mode", "mode=3", "camp");
+      burnMsg(kind === "camp" ? "Camp mode on: climate keeps running with the car parked. Keep this page open so it can switch everything off at the target."
+        : kind === "defrost" ? "Max defrost on." : `Climate on full${b.cold ? ": HI, seat and wheel heaters" : ": AC at LO"}.`, "good");
+    } catch (e) { burnMsg(`${step} didn't work: ${e.message}.`, "bad"); }
+    finally { app.burnBusy = false; app.forceSlow = true; }
+  }
+  // Undo only what the app switched on, climate last, and put the cabin temperature back.
+  async function burnOff(b = cfg.health && cfg.health.burn) {
+    if (!b || !b.did.length || app.burnBusy) return;
+    const UNDO = [["camp", "Camp mode off", "set_climate_keeper_mode", "mode=0"], ["defrost", "Max defrost off", "stop_max_defrost", ""],
+      ["wheel", "Steering wheel heater off", "stop_steering_wheel_heater", ""], ["seats", "Driver seat heater off", "set_seat_heat", "seat=front_left&level=0"],
+      ["seats", "Passenger seat heater off", "set_seat_heat", "seat=front_right&level=0"], ["temp", "Cabin temperature back", "set_temperatures", `temperature=${b.prevC}`],
+      ["climate", "Climate off", "stop_climate", ""]];
+    app.burnBusy = true; app.forceSlow = true; const failed = [];
+    for (const [k, label, name, q] of UNDO) {
+      if (!b.did.includes(k) || (k === "temp" && b.prevC == null) || (k === "climate" && b.wasOn)) continue;
+      try { burnMsg(`${label}…`); await tcmd(name, q); } catch (e) { failed.push(`${label} (${e.message})`); }
+    }
+    if (!failed.length) b.did = [];
+    store(KEY.cfg, cfg); app.burnBusy = false; app.forceSlow = true;
+    burnMsg(failed.length ? `Couldn't undo: ${failed.join(", ")}. Check the car's climate screen.` : "Everything the app switched on is off again.", failed.length ? "bad" : "good");
+  }
+  $("hTarget").value = String(cfg.health ? cfg.health.target : cfg.healthTarget || 20);
+  $("hTarget").addEventListener("change", e => {
+    cfg.healthTarget = +e.target.value;
+    if (cfg.health) { cfg.health.target = cfg.healthTarget; cfg.health.phase = "out"; }
+    store(KEY.cfg, cfg); app.forceSlow = true; render(true);
+  });
+  $("hStart").addEventListener("click", () => {
+    if (cfg.health) healthStop();
+    else { cfg.health = { target: cfg.healthTarget || 20, at: Date.now(), odo0: L.odoMi ?? null, e0: L.energyRemainingKWh ?? null, phase: "out", demo: app.source === "demo" }; store(KEY.cfg, cfg); burnMsg(""); }
+    app.forceSlow = true; render(true);
+  });
+  $("burnFull").addEventListener("click", () => burn("full"));
+  $("burnDefrost").addEventListener("click", () => burn("defrost"));
+  $("burnCamp").addEventListener("click", () => burn("camp"));
+  $("burnOff").addEventListener("click", () => burnOff());
   /* ---------------- tabs ----------------
-     Cockpit / Trip / Battery / Setup; the last one is remembered. Drive view always shows the cockpit. */
-  const TABS = ["cockpit", "trip", "battery", "setup"];
+     Cockpit / Trip / Battery / Health / Setup; the last one is remembered. Drive view always shows the cockpit. */
+  const TABS = ["cockpit", "trip", "battery", "health", "setup"];
   function showTab(name) {
     if (!TABS.includes(name)) name = "cockpit";
     if (cfg.tab !== name) { cfg.tab = name; store(KEY.cfg, cfg); }
@@ -742,6 +900,7 @@
       st.textContent = tone === "good" ? "Efficient" : tone === "warn" ? "A bit heavy" : tone === "bad" ? "Wasting range" : "Measuring";
       st.dataset.tone = tone;
     }
+    if (healthOn() && st.dataset.tone) { st.textContent = "Health test prep"; st.dataset.tone = ""; }   // using energy is the point
     el.dataset.word = String(!/^\d+$/.test(el.textContent));          // "Regen", "Parked"… set smaller than a number
     $("effTarget").textContent = target ?`Target ${target} Wh/mi${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(tripAvg)}` : ""}` : "";
   }
@@ -817,10 +976,12 @@
 
   /* ---------------- eyes-free alerts ----------------
      Off by default. A short buzz and/or tone when a costly habit starts, so you don't have to look:
-     one low tone = ease off the pedal; two high tones = lift earlier (brake or regen at its limit); long low = pack warning.
+     one low tone = ease off the pedal; two high tones = lift earlier (brake or regen at its limit); long low = pack warning;
+     three rising = health test prep: turn around, or the target is reached.
      Each kind fires at most once per 15 s, never while cruise/Autopilot is marked on. */
   const ALERT_KIND = { "pedal.heavy": "ease", "pedal.sharpLift": "ease", "brake.friction": "brake", "pedal.regenAtLimit": "brake", "pack.coldDraw": "warn", "soc.lowDraw": "warn", "pack.hot": "warn" };
-  const PATTERN = { ease: { vib: [90], tones: [[392, 0.16]] }, brake: { vib: [60, 70, 60], tones: [[784, 0.1], [784, 0.1]] }, warn: { vib: [250], tones: [[262, 0.45]] } };
+  const PATTERN = { ease: { vib: [90], tones: [[392, 0.16]] }, brake: { vib: [60, 70, 60], tones: [[784, 0.1], [784, 0.1]] }, warn: { vib: [250], tones: [[262, 0.45]] },
+    turn: { vib: [150, 80, 150, 80, 300], tones: [[523, 0.14], [659, 0.14], [784, 0.3]] } };
   let audioCtx = null; const lastAlert = {}; let prevKinds = new Set();
   function unlockAudio() { try { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); } catch (e) {} }
   function fireAlert(type, force) {
@@ -840,7 +1001,7 @@
     const st = app.coach.state, kinds = new Set((st.list || []).map(q => q.kind));
     if (!st.cruiseOn && (L.speedMph ?? 0) > 5) for (const k of kinds) {
       const type = ALERT_KIND[k];
-      if (type && !prevKinds.has(k) && !(now - (lastAlert[k] || 0) < 15000)) { lastAlert[k] = now; fireAlert(type); }
+      if (type && !(healthOn() && type !== "warn") && !prevKinds.has(k) && !(now - (lastAlert[k] || 0) < 15000)) { lastAlert[k] = now; fireAlert(type); }
     }
     prevKinds = kinds;
   }

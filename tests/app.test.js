@@ -73,17 +73,20 @@ function fakeSerial(...ports) {
   return { ports, getPorts: async () => ports.filter(p => !p.forgotten), requestPort: async () => ports[ports.length - 1], addEventListener() {} };
 }
 
+// car: readings a test can change between polls. Commands (POSTs) are recorded in cmds and always succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [];
-  const fetch = async url => {
+  const calls = [], cmds = [], car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false };
+  const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
+    if (opts.method === "POST") { cmds.push(url.replace("https://api.tessie.com/", "")); return { ok: true, status: 200, json: async () => ({ result: true }) }; }
     const body = /vehicles/.test(url) ? { results: cars }
-      : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: 50, nominal_full_pack_energy: 75, battery_level: 66, battery_range: 200, timestamp: Date.now() / 1000 }
-      : { state: "online", drive_state: { power: 0, speed: 0 }, vehicle_state: { odometer: 10000 }, charge_state: {} };
+      : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, nominal_full_pack_energy: 75, battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
+      : { state: "online", drive_state: { power: 0, speed: 0 }, vehicle_state: { odometer: car.odometer }, charge_state: {},
+          climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
     return { ok: true, status: 200, json: async () => body };
   };
-  return { fetch, calls };
+  return { fetch, calls, cmds, car };
 }
 
 // Screen wake lock: counts the locks still held.
@@ -233,7 +236,7 @@ const test = async (name, fn) => {
 
   await test("tabs: the last one is remembered, Drive view shows the cockpit, Tessie without a token opens Setup", async () => {
     const app = boot({ storage: { "de.cfg.v1": { tab: "battery" } } });
-    const shown = () => ["cockpit", "trip", "battery", "setup"].filter(n => !app.el(`view-${n}`).hidden);
+    const shown = () => ["cockpit", "trip", "battery", "health", "setup"].filter(n => !app.el(`view-${n}`).hidden);
     assert.deepStrictEqual(shown(), ["battery"]);
     app.click("tab-trip");
     assert.deepStrictEqual(shown(), ["trip"]); assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).tab, "trip");
@@ -300,6 +303,64 @@ const test = async (name, fn) => {
     assert.strictEqual(app.el("cruiseBtn").hidden, false, "live pedal data in Demo");
     assert.strictEqual(app.el("disconnectBtn").hidden, true, "Demo stops from its own button");
     app.stop();
+  });
+
+  await test("health test prep: plan out-and-back, turn around, stop at the target and undo the climate it switched on", async () => {
+    const tes = fakeTessie(), drives = [{ id: "1", t0: 1, mi: 40, kwh: 10, wh: 250, score: 80 }, { id: "2", t0: 2, mi: 40, kwh: 10, wh: 250, score: 80 }];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    const cfg = () => JSON.parse(app.store.get("de.cfg.v1")), step = async f => { f(); await wait(1300); };   // a poll, then the once-a-second redraw
+    app.click("tessieBtn"); await wait(1300);
+    // 66% → 20% of a 75 kWh pack = 34.5 kWh = 138 mi at 250 Wh/mi: 69 out, 69 back.
+    assert.ok(/~138 mi at 250 Wh\/mi/.test(app.html("hRows")) && /~69 mi/.test(app.html("hRows")), app.html("hRows"));
+    assert.strictEqual(app.el("burnFull").disabled, true, "nothing to burn toward before Start");
+    app.click("hStart"); assert.deepStrictEqual([cfg().health.target, cfg().health.odo0, cfg().health.phase], [20, 10000, "out"]);
+    app.click("burnFull"); await wait(200);
+    assert.deepStrictEqual(tes.cmds, ["VIN1/command/start_climate", "VIN1/command/set_temperatures?temperature=15"], "warm out: AC at LO");
+    // 10 mi out on 2.5 kWh (250 Wh/mi), at 62%: 31.5 kWh left above 20% = 126 mi; turn around in (126 − 10) / 2 = 58 mi.
+    await step(() => Object.assign(tes.car, { odometer: 10010, energy: 47.5, level: 62 }));
+    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 58.0 mi."); assert.ok(/58\.0 mi/.test(app.html("hRows")));
+    // 70 mi out at 30%: 7.5 kWh = 30 mi left, less than the 70 back: time to head home.
+    await step(() => Object.assign(tes.car, { odometer: 10070, energy: 32.5, level: 30 }));
+    assert.strictEqual(cfg().health.phase, "back"); assert.strictEqual(app.text("tip"), "Head home · 30.0 mi of driving left until 20%.");
+    await step(() => Object.assign(tes.car, { odometer: 10100, energy: 25, level: 20 }));
+    assert.strictEqual(cfg().health.phase, "done"); assert.strictEqual(app.text("tip"), "At 20%: ready for the battery health test.");
+    assert.deepStrictEqual(tes.cmds.slice(2), ["VIN1/command/set_temperatures?temperature=21", "VIN1/command/stop_climate"], "only what it switched on, temperature put back");
+    app.click("hStart"); assert.strictEqual(cfg().health, null);
+    app.stop();
+  });
+
+  await test("health test prep in the cold: HI with seat and wheel heaters; Turn off undoes them, climate last", async () => {
+    const tes = fakeTessie(); Object.assign(tes.car, { outside: 2, climateOn: false, setC: 20 });
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300);
+    app.click("hStart"); app.click("burnFull"); await wait(200);
+    assert.deepStrictEqual(tes.cmds.map(c => c.slice(13)), ["start_climate", "set_temperatures?temperature=28", "set_seat_heat?seat=front_left&level=3",
+      "set_seat_heat?seat=front_right&level=3", "start_steering_wheel_heater"]);
+    app.click("burnOff"); await wait(200);
+    assert.deepStrictEqual(tes.cmds.slice(5).map(c => c.slice(13)), ["stop_steering_wheel_heater", "set_seat_heat?seat=front_left&level=0",
+      "set_seat_heat?seat=front_right&level=0", "set_temperatures?temperature=20", "stop_climate"]);
+    assert.ok(/off again/.test(app.text("burnMsg")));
+    app.stop();
+  });
+
+  await test("health test prep in Demo never sends commands and doesn't carry over to the car", async () => {
+    const tes = fakeTessie();
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    app.click("demoBtn"); await wait(1300);
+    app.click("hStart"); assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).health.demo, true);
+    await wait(1100); assert.strictEqual(app.el("burnFull").disabled, true);
+    app.click("burnFull"); await wait(100); assert.deepStrictEqual(tes.cmds, []);
+    app.click("demoBtn"); app.click("tessieBtn"); await wait(800);
+    assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).health, null, "the Demo prep is dropped once real data arrives");
+    app.stop();
+  });
+
+  await test("adapter frames keep the trip math running when the browser stalls the page's timers", async () => {
+    const app = boot({ serial: fakeSerial() });
+    await wait(2500); assert.strictEqual(app.text("chipText"), "Live");
+    app.stop(); app.el("chipText").textContent = "";        // every app timer gone, as when Chrome throttles a background page
+    await wait(1500);
+    assert.strictEqual(app.text("chipText"), "Live", "a frame ran the update the stalled timer missed");
   });
 
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);

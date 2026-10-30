@@ -36,11 +36,12 @@ On later visits, Chrome remembers the adapter, so **Connect car** skips the choo
 
 ## Screen layout
 
-Four tabs: on a phone they sit at the bottom of the screen, on a wider screen across the top (with charge and pack temperature beside them). The last one you used is remembered.
+Five tabs: on a phone they sit at the bottom of the screen, on a wider screen across the top (with charge and pack temperature beside them). The last one you used is remembered.
 
 - **Cockpit:** coaching tip, efficiency gauge, power flow, accelerator, mile by mile and the max-range guide.
 - **Trip:** this trip and where its energy went, the consumption chart, drive history and your speed curve.
 - **Battery:** charge and pack readings, the charge plan, and a heatmap of all 108 bricks.
+- **Health:** prep for the car's battery health test: use the charge down to a target on an out-and-back drive.
 - **Setup:** adapter and screen options, alerts, Tessie, backup, CSV recording and diagnostics.
 
 ## Efficiency gauge (Cockpit)
@@ -67,6 +68,25 @@ Four tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 - **Drive summaries and history:** a score, comparison with rated, slowdown capture, energy breakdown and the one habit to fix, with trends across drives. The last 500 drives are kept on the phone; the list shows 8, and **Show all** lists the rest.
 - Slower-changing panels redraw once a second, and only on the tab you're looking at, to keep the phone cool in a mount.
 
+## Battery health test prep (Health tab)
+
+Gets the charge down to a target (20% by default) on an out-and-back drive from home, so you arrive home ready for the car's battery health test.
+
+- **Plan:** from your current charge, the kWh to use and the round-trip miles at your usual Wh/mi (same basis as the charge plan), so you know how far to drive out.
+- **Start from home**, then drive. After 2 mi the app uses this drive's own Wh/mi.
+  - On the way out, the Cockpit coach shows "66% → 20% · turn around in 12.4 mi". It's time to turn when what's left above the target only just covers the drive back on the same road.
+  - Then "Head home · 18.0 mi of driving left until 20%". This doesn't need to know which way you're driving, so turning late just means arriving a little lower.
+  - At the target: "At 20%: ready for the battery health test".
+  - A rising three-tone alert marks the turn-around and the target if eyes-free alerts are on.
+  - While prep is on, the eco nags stay quiet: the gauge badge reads "Health test prep", and the pedal and lift-earlier alerts don't fire. Pack warnings still do.
+- **Burn faster** (needs your Tessie token, even when the adapter supplies the data):
+  - **Climate on full:** AC at LO when it's warm out; HI plus both front seat heaters and the steering wheel heater when it's cold.
+  - **Max defrost:** heater and AC together with the fan maxed.
+  - **Finish parked:** Camp mode, if you get home above the target.
+- Only climate commands are sent. At the target, on Stop, or when the prep clears itself after a day, the app switches off only what it switched on, climate last, and puts the cabin temperature back. It can only do that while the page is open. If the car refuses a command, the card names it and the reason.
+- Assumes the way back costs about what the way out did. On a route that's mostly downhill going out, you'll arrive a little under the target.
+- Demo never sends commands, and a prep tried in Demo is dropped once real data arrives.
+
 ## Eyes-free alerts (Setup tab, off by default)
 
 Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**, at most once per 15 s per kind, never while the **Cruise / Autopilot** switch is on, and only above 5 mph.
@@ -76,6 +96,7 @@ Choose Vibrate, Sound, or both. Each alert fires when a costly habit **starts**,
 | One low tone / short buzz | Ease off: heavy pedal or a sharp lift-off |
 | Two high tones / double buzz | Lift earlier: braking with little regen, or regen at its limit |
 | Long low tone / long buzz | Pack warning: cold pack under high draw, hot pack, or low charge under high draw |
+| Three rising tones / three buzzes | Health test prep: turn around now, or the target is reached |
 
 Tap **Test alert** once to allow sound (browsers require a tap before audio).
 
@@ -139,6 +160,7 @@ The chip shows **Looking for the adapter…** until the car powers the OBD port.
 - If the Bluetooth link drops mid-drive, it reconnects quietly the same way, keeping the trip.
 - Picking an adapter with **Choose adapter** (Setup tab) makes Chrome forget the other adapters it had permission for, so auto-connect can't open the wrong one (Web Serial can't tell two Bluetooth serial adapters apart). Choose adapter still lists them all.
 - **Limit:** Chrome can't connect while the page is closed or in the background. Web pages can't run Bluetooth in the background, so open the app (or keep it as the home-screen app) when you get in.
+  - Once connected, switching to Maps can make Chrome slow the page's timers to once a minute. The adapter's frames then drive the trip math instead, so the energy breakdown and moving time keep counting as long as frames keep arriving.
 - Close Scan My Tesla and other OBD apps first: the adapter allows one connection at a time.
 
 ## What's on screen and where it comes from
