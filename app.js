@@ -35,6 +35,8 @@
   function status(kind, text) {
     $("chip").dataset.s = kind; $("chipText").textContent = text;
     $("connectBtn").hidden = app.source === "car";
+    $("chooseBtn").hidden = app.source === "car";
+    document.body.classList.toggle("offline", app.source !== "car");
     $("disconnectBtn").hidden = app.source !== "car";
     $("demoBtn").textContent = app.source === "demo" ? "Stop demo" : "Demo";
     $("tessieBtn").textContent = app.source === "tessie" ? "Stop Tessie" : "Tessie";
@@ -62,13 +64,29 @@
 
   /* ---------------- car connection ---------------- */
   // auto = true: a background attempt with an adapter Chrome already has permission for (no chooser, quiet on failure).
-  async function connectCar(auto = false) {
+  async function connectCar(auto = false, choose = false) {
+    auto = auto === true;                                   // never let an Event object count as "auto"
     if (!window.ElmLink || !ElmLink.supported()) {
       if (!auto) notice("This browser can't open Bluetooth serial ports. Use Chrome 138 or newer on Android, opened from an https:// address.", "bad");
       return;
     }
-    if (app.connecting) return; app.connecting = true;
-    if (!auto) app.userStopped = false;
+    let picked = null;
+    if (!auto) {
+      app.userStopped = false;
+      // Open the picker first, while Chrome still counts this as your tap.
+      let known = [];
+      try { known = await navigator.serial.getPorts(); } catch (e) {}
+      if (choose || !known.length) {
+        try { picked = await navigator.serial.requestPort(); }
+        catch (e) { notice(e && e.name === "NotFoundError" ? "No adapter picked. If it isn't in the list, pair it in Android Settings → Bluetooth first (PIN is usually 1234), then try again." : (e.message || String(e)), "bad"); return; }
+      }
+      // A background attempt may still be holding the port; wait for it (up to 12 s) instead of ignoring the tap.
+      if (app.connecting) { app.abortAuto = true; status("connecting", "Finishing the last attempt…"); for (let i = 0; i < 48 && app.connecting; i++) await new Promise(r => setTimeout(r, 250)); }
+      if (app.source === "car") await disconnect();
+      app.userStopped = false;
+      if (picked) app.port = picked;
+    }
+    if (app.connecting) return; app.connecting = true; app.abortAuto = false;
     if (auto && app.source) { app.connecting = false; return; }
     stopDemo(); stopTessie();
     const link = new ElmLink({ onLine, onStatus: onLinkStatus });
@@ -83,8 +101,10 @@
       try { cfg.portInfo = port.getInfo ? port.getInfo() : null; store(KEY.cfg, cfg); } catch (e) {}
       app.port = port; app.link = link; app.source = "car";
       status("connecting", "Connecting");
-      notice(null);
-      await link.open(port);
+      if (!auto) notice(null);
+      // Bluetooth open can hang when the adapter is off or out of range: give up after 10 s.
+      await Promise.race([link.open(port), new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error("The adapter didn't answer. Is the car awake and the adapter plugged in?"), { quiet: auto })), 10000))]);
+      if (auto && app.abortAuto) throw Object.assign(new Error("superseded"), { quiet: true });
       await link.init(LISTEN);
       resetDecoder();
       await link.startMonitor();
@@ -99,7 +119,7 @@
         // Adapter not powered/in range yet (car off, phone just got in): keep the remembered port and try again soon.
         status("off", app.port || (e && !e.quiet) ? "Looking for the adapter…" : "Not connected");
       } else {
-        const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the adapter in Android Bluetooth settings first, then tap Connect car." : (e.message || String(e));
+        const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the adapter in Android Bluetooth settings first, then tap Connect car." : `${e.message || String(e)} If that's the wrong adapter, tap Choose adapter.`;
         notice(msg, "bad");
         if (e && e.name !== "NotFoundError") app.port = null;
         status("off", "Not connected");
@@ -917,7 +937,10 @@
   document.addEventListener("visibilitychange", () => { if (!document.hidden && app.source) keepAwake(); });
 
   /* ---------------- controls ---------------- */
-  $("connectBtn").addEventListener("click", connectCar);
+  // Wrapped: passing connectCar directly would hand it the click event as its "auto" argument (the v21 bug:
+  // a tap was treated as a silent background attempt, so the adapter picker never opened).
+  $("connectBtn").addEventListener("click", () => connectCar(false, false));
+  $("chooseBtn").addEventListener("click", () => connectCar(false, true));
   $("demoBtn").addEventListener("click", () => (app.source === "demo" ? disconnect() : startDemo()));
   $("disconnectBtn").addEventListener("click", disconnect);
   $("resetTrip").addEventListener("click", () => { app.trip = null; drives.cancel(); stops.reset(); app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
