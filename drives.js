@@ -14,6 +14,8 @@
   // The single most useful habit to work on next, from what this drive actually measured.
   function habit(d) {
     if (d.friction >= 3) return { tone: "warn", text: `Lift off earlier: ${d.friction} slowdowns used the brake with little regen. Coasting into stops keeps that energy.` };
+    const used = (d.accelKWh || 0) + (d.cruiseKWh || 0);
+    if (used > 0.2 && d.accelKWh / used > 0.3) return { tone: "warn", text: `Speeding up took ${Math.round((d.accelKWh / used) * 100)}% of the driving energy. Build speed gradually and lift early so you don't brake away what you spent.` };
     if (d.pedalPct != null && d.pedalPct < 60 && d.heavy >= 3) return { tone: "warn", text: `Ease take-offs: ${d.heavy} heavy-pedal moments. Up to 40% pedal gets most of the speed for far less energy.` };
     if (d.cruiseBand != null && d.sweetBand != null && d.cruiseBand >= d.sweetBand + 10)
       return { tone: "warn", text: `Most of this drive was at ${d.cruiseBand}–${d.cruiseBand + 4} mph. Your data says ${d.sweetBand}–${d.sweetBand + 4} mph is your most efficient band.` };
@@ -27,7 +29,7 @@
   function createDrives({ load, save } = {}) {
     const s = { cur: null, stoppedFor: 0, history: (load && load()) || [], persist: true };
 
-    function snap(x) { return { odo: x.odo, drive: x.drive, park: x.park, regen: x.regen, climate: x.climateKWh, heavy: x.heavy, friction: x.friction, pressed: x.pressedSec, right: x.rightSec }; }
+    function snap(x) { return { odo: x.odo, drive: x.drive, park: x.park, regen: x.regen, climate: x.climateKWh, accel: x.accelKWh ?? 0, cruise: x.cruiseKWh ?? 0, heavy: x.heavy, friction: x.friction, pressed: x.pressedSec, right: x.rightSec }; }
 
     function finish(x, now) {
       const c = s.cur, a = c.start, b = snap(x); s.cur = null; s.stoppedFor = 0;
@@ -43,6 +45,7 @@
         pedalPct, heavy: b.heavy - a.heavy, friction: b.friction - a.friction,
         regenKWh: b.regen - a.regen, parkKWh: b.park - a.park,
         climateKWh: a.climate != null && b.climate != null ? b.climate - a.climate : null,
+        accelKWh: b.accel - a.accel, cruiseKWh: b.cruise - a.cruise,
         avgMph: c.movingSec > 0 ? (mi / c.movingSec) * 3600 : null, maxMph: c.maxMph,
         cruiseBand: best > 60 ? cruiseBand : null, sweetBand: x.sweetBand ?? null, outsideC: x.outsideC ?? null, demo: !!x.demo,
       };

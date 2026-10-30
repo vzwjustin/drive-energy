@@ -166,11 +166,26 @@
     }, app.source === "demo" ? dt * DEMO_SPEED : dt, app.source === "demo" ? (app.simNow = (app.simNow || 0) + dt * DEMO_SPEED * 1000) : now);
     const dtSim = app.source === "demo" ? dt * DEMO_SPEED : dt;
     if (L.compressorKW != null) app.climateKWh = (app.climateKWh || 0) + (L.compressorKW * dtSim) / 3600;
+    // Where the energy went: integrate pack power into cruising / speeding up / climate / parked, plus regen recovered.
+    if (live && app.trip && app.pEma != null && app.source !== "tessie") {
+      const eb = (app.trip.eb ||= { cruise: 0, accel: 0, climate: 0, parked: 0, regen: 0 }), P = app.pEma, h = dtSim / 3600;
+      const moving = (L.speedMph ?? 0) > 2, clim = P > 0 ? Math.min(P, Math.max(0, L.compressorKW ?? 0)) : 0;
+      if (P < 0) { if (moving) eb.regen += -P * h; }
+      else {
+        eb.climate += clim * h; const rest = P - clim;
+        if (!moving) eb.parked += rest * h;
+        else {
+          const cruise = app.tgt && app.tgt.cruiseKW > 0.5 ? app.tgt.cruiseKW : rest;
+          if (app.coach.state.accel > 0.3 && rest > cruise) { eb.accel += (rest - cruise) * h; eb.cruise += cruise * h; } else eb.cruise += rest * h;
+        }
+      }
+    }
     if (live && (app.source === "car" || app.source === "demo") && app.trip) {
       const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
       const done = drives.update({
         odo, mph: L.speedMph, gear: L.gear, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen,
         climateKWh: L.compressorKW != null ? app.climateKWh : null, heavy: st.heavyEvents, friction: st.frictionEvents,
+        accelKWh: app.trip.eb ? app.trip.eb.accel : 0, cruiseKWh: app.trip.eb ? app.trip.eb.cruise : 0,
         pressedSec: st.pressedSec, rightSec: st.rightSec, rated: ratedWh(), sweetBand: sw ? sw.mph : null, outsideC: L.outsideC, demo: app.source === "demo",
       }, dtSim, Date.now());
       if (done) { showSummary(done); renderDrives(); }
@@ -228,6 +243,7 @@
     $("tSince").textContent = t ? `since ${new Date(t.t0).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
     const bars = $("split").children;
     bars[0].style.width = tot > 0 ? `${(Math.max(0, t.drive) / tot) * 100}%` : "0"; bars[1].style.width = tot > 0 ? `${(t.park / tot) * 100}%` : "0";
+    renderBreakdown(t);
     // bricks
     renderBricks();
     renderCoach(live);
@@ -277,6 +293,16 @@
     const v = ((rem - (L.bufferKWh ?? 0)) * 1000) / range;
     if (v > 150 && v < 400) ratedEma = ratedEma == null ? v : ratedEma + (v - ratedEma) * 0.05;
     return ratedEma ? Math.round(ratedEma) : null;
+  }
+
+  const EB = [["cruise", "Holding speed", "var(--rated)"], ["accel", "Speeding up", "var(--energy)"], ["climate", "Climate", "#6aa5e8"], ["parked", "Parked / standby", "var(--faint)"]];
+  function renderBreakdown(t) {
+    const eb = t && t.eb, box = $("ebRows"), bar = $("ebBar");
+    const tot = eb ? EB.reduce((p, [k]) => p + Math.max(0, eb[k]), 0) : 0;
+    if (!eb || tot < 0.02) { bar.innerHTML = ""; box.innerHTML = `<p class="note">${app.source === "tessie" ? "Needs the adapter: Tessie updates too slowly to split energy by use." : "Fills in as you drive."}</p>`; return; }
+    bar.innerHTML = EB.map(([k, , c]) => `<i style="width:${(Math.max(0, eb[k]) / tot) * 100}%;background:${c}"></i>`).join("");
+    box.innerHTML = EB.map(([k, label, c]) => `<div><span><i class="dot" style="background:${c}"></i>${label}</span><span>${eb[k].toFixed(2)} kWh · ${Math.round((Math.max(0, eb[k]) / tot) * 100)}%</span></div>`).join("")
+      + `<div><span><i class="dot" style="background:var(--regen)"></i>Recovered by regen</span><span>${eb.regen.toFixed(2)} kWh${eb.accel > 0.05 ? ` · ${Math.round((eb.regen / eb.accel) * 100)}% of speed-up energy` : ""}</span></div>`;
   }
 
   function renderBricks() {
@@ -599,6 +625,7 @@
         ${cell("Range vs rated", d.rangeDeltaMi == null ? "—" : `${signed(d.rangeDeltaMi)} mi`, "on this drive")}
         ${cell("Energy", `${d.kwh.toFixed(2)} kWh`, `${d.regenKWh.toFixed(2)} kWh back from regen`)}
         ${cell("Pedal in range", d.pedalPct == null ? "—" : `${d.pedalPct}%`, `${d.heavy} heavy · ${d.friction} brake-heavy stops`)}
+        ${cell("Speeding up", d.accelKWh != null && d.accelKWh + d.cruiseKWh > 0 ? `${Math.round((d.accelKWh / (d.accelKWh + d.cruiseKWh)) * 100)}%` : "—", "of driving energy")}
         ${cell("Climate", d.climateKWh == null ? "—" : `${d.climateKWh.toFixed(2)} kWh`, d.climateKWh != null && d.kwh > 0 ? `${Math.round((d.climateKWh / d.kwh) * 100)}% of energy` : "")}
       </div>
       <div class="shabit" data-tone="${d.habit.tone}"><div class="label">${d.habit.tone === "good" ? "Nice" : "Work on this next"}</div><p>${d.habit.text}</p></div>
@@ -661,6 +688,7 @@
     if (!app.trip) return;
     const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
     const d = drives.finish({ odo: L.odoMi ?? app.synthOdo, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen, climateKWh: L.compressorKW != null ? app.climateKWh : null,
+      accelKWh: app.trip.eb ? app.trip.eb.accel : 0, cruiseKWh: app.trip.eb ? app.trip.eb.cruise : 0,
       heavy: st.heavyEvents, friction: st.frictionEvents, pressedSec: st.pressedSec, rightSec: st.rightSec, rated: ratedWh(), sweetBand: sw ? sw.mph : null, outsideC: L.outsideC, demo: app.source === "demo" }, Date.now());
     if (d) showSummary(d); else notice("That drive was under 0.3 mi, so there's nothing to summarize.", "info");
     renderDrives();

@@ -131,6 +131,7 @@ t("drives: segment ends after 20 s in P and summarizes deltas", () => {
 t("drives: habit picks the biggest issue", () => {
   const Dr = require("../drives.js");
   assert.ok(/Lift off earlier/.test(Dr.habit({ friction: 4, heavy: 5, pedalPct: 40 }).text));
+  assert.ok(/Speeding up took 40%/.test(Dr.habit({ friction: 0, heavy: 1, pedalPct: 80, accelKWh: 0.4, cruiseKWh: 0.6 }).text));
   assert.ok(/Ease take-offs/.test(Dr.habit({ friction: 0, heavy: 5, pedalPct: 40 }).text));
   assert.ok(/60–64 mph/.test(Dr.habit({ friction: 0, heavy: 0, pedalPct: 80, cruiseBand: 70, sweetBand: 60 }).text));
   assert.strictEqual(Dr.habit({ friction: 0, heavy: 0, pedalPct: 85, vsRatedPct: -3 }).tone, "good");

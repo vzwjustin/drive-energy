@@ -384,6 +384,10 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
           <div><span><i class="dot" style="background:var(--regen)"></i>Recovered by regen</span><span id="tRegen">—</span></div>
           <div><span>Added by charging</span><span id="tChg">—</span></div>
         </div>
+        <div class="label" style="margin-top:16px">Where the energy went</div>
+        <div class="split" id="ebBar" style="height:14px"></div>
+        <div class="rows" id="ebRows"></div>
+        <p class="note">Speeding up = power above what holding that speed costs while accelerating. Climate = heat-pump compressor.</p>
         <p class="note"><button class="linkbtn" id="resetTrip" type="button">Reset trip</button></p>
       </section>
 
@@ -431,13 +435,13 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v11</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v12</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=11"></script>
-<script src="elm.js?v=11"></script>
-<script src="sim.js?v=11"></script>
-<script src="coach.js?v=11"></script>
-<script src="drives.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="decode.js?v=12"></script>
+<script src="elm.js?v=12"></script>
+<script src="sim.js?v=12"></script>
+<script src="coach.js?v=12"></script>
+<script src="drives.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
