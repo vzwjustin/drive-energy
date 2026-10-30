@@ -1,108 +1,167 @@
-/* Efficiency coach: reads accelerator pedal, brake and speed (0x118, 0x257) plus pack power (0x132)
-   and turns them into one short, glanceable tip, a trip score, and a speed-vs-consumption table
-   learned from this car's own steady cruising. */
+/* Range coach — same rules and thresholds as EcoLab's RangeCoach (vzwjustin/eco, core/sim/RangeCoach.kt),
+   ported to JS so both apps coach the same way. Listen-only: advice for the driver, nothing is sent.
+   Adds Drive Energy's own speed-band learning (now split by outside temperature) and trip stats. */
 (function (root) {
   "use strict";
 
-  // Pedal "green zone": how far down the pedal can go and still be an efficient request.
-  // Take-offs need less than people think; highway cruise needs more just to hold speed.
-  const greenMax = mph => (mph < 25 ? 30 : mph < 50 ? 40 : 50);
-  const HARD_PEDAL = 60, BRAKE_SPEED = 8, JERKY = 22;
+  const ECO_LOW = 15, ECO_HIGH = 40, HYST = 1;               // pedal %, EcoLab PEDAL_ECO_LOW/HIGH, ZONE_HYSTERESIS
+  const LEVEL_ORDER = { WARN: 0, GOOD: 1, TIP: 2 };          // EcoLab sort: warnings first, then good, then tips
+  const MPH_PER_MS = 2.2369363;
 
-  function createCoach({ loadBuckets, saveBuckets }) {
-    const c = {
-      lastPedal: null, lastMph: null, jerk: 0,
-      driveSec: 0, greenSec: 0, hardLaunches: 0, brakeStops: 0,
-      wasHard: false, wasBrake: false,
-      tip: null, tipAt: 0,
-      buckets: (loadBuckets && loadBuckets()) || {}, lastSave: 0, persist: true,
-    };
+  function rawZone(p) {
+    if (p == null || !isFinite(p)) return "OFF";
+    if (p < 2) return "OFF";
+    if (p < ECO_LOW) return "LIGHT";
+    if (p <= ECO_HIGH) return "RIGHT";
+    return "TOO_MUCH";
+  }
+  // A heavy pedal that is only holding speed uphill counts as right (EcoLab's grade/wind exemption; no wind estimate here).
+  function loadZone(p, accelMs2, grade) {
+    const z = rawZone(p);
+    const holding = (accelMs2 ?? 1) <= 0.3 && (grade ?? 0) > 2;
+    return z === "TOO_MUCH" && holding ? "RIGHT" : z;
+  }
+  function pedalZone(p, accelMs2, grade, prev) {
+    const z = loadZone(p, accelMs2, grade);
+    if (!prev || p == null || z === prev) return z;
+    const pair = [prev, z].sort().join("|");
+    const edge = pair === "LIGHT|RIGHT" ? ECO_LOW : pair === "RIGHT|TOO_MUCH" ? ECO_HIGH : null;
+    return edge != null && Math.abs(p - edge) < HYST ? prev : z;
+  }
 
-    function resetTrip() {
-      Object.assign(c, { driveSec: 0, greenSec: 0, hardLaunches: 0, brakeStops: 0, jerk: 0, wasHard: false, wasBrake: false });
+  const tF = c => Math.round((c * 9) / 5 + 32);
+  const tempBand = c => (c == null || !isFinite(c) ? "x" : (f => (f < 40 ? "<40" : f < 60 ? "40-59" : f < 80 ? "60-79" : "80+"))((c * 9) / 5 + 32));
+
+  /** EcoLab RangeCoach.cues, imperial units. Returns cues most important first; a coasting reminder is always last. */
+  function cues(x) {
+    const { pedal, kw, mph, brake, soc, tMin, tMax, hvacKw, regenLimitKw, accelMs2, grade, outsideC, cruiseOn } = x;
+    const kmh = mph != null ? Math.abs(mph) * 1.609344 : null;
+    const moving = kmh != null && kmh > 5;
+    const out = [];
+    const add = (level, text, kind) => out.push({ level, text, kind });
+
+    if (tMin != null) {
+      if (tMin < 10 && (kw ?? 0) > 40) add("WARN", `Pack is cold (${tF(tMin)} °F) and drawing ${Math.round(kw)} kW. Ease off: hard draw on a cold pack wears it and wastes range.`, "pack.coldDraw");
+      else if (tMin < 10) add("TIP", `Pack is cold (${tF(tMin)} °F): regen is reduced until it warms, so lift off earlier.`, "pack.cold");
     }
+    if (tMax != null && tMax > 45) add("WARN", `Pack is hot (${tF(tMax)} °F). Smooth, lower-power driving keeps it from heating further.`, "pack.hot");
+    if (soc != null) {
+      if (soc < 15 && (kw ?? 0) > 60) add("WARN", `Low charge (${Math.floor(soc)}%) at ${Math.round(kw)} kW. Lighter pedal protects the pack and range.`, "soc.lowDraw");
+      if (soc > 95 && moving) add("TIP", `Near full (${Math.floor(soc)}%): regen is limited, so brake gently and plan stops early.`, "soc.full");
+    }
+    if (regenLimitKw != null && regenLimitKw < 15 && moving) add("TIP", `Regen is limited to ${Math.floor(regenLimitKw)} kW: coast early rather than braking late.`, "regen.limited");
+
+    if (moving && brake === true && (kw ?? 0) > -5) add("TIP", "Braking without much regen: lift off sooner next time and let the car slow itself.", "brake.friction");
+    if (moving && pedal != null && !cruiseOn) {
+      const a = accelMs2 ?? 0, g = grade ?? 0;
+      const underLoad = a <= 0.3 && g > 2;
+      const regenKw = kw != null && kw < -1 ? -kw : null;
+      const limit = regenLimitKw != null && regenLimitKw > 0 ? regenLimitKw : null;
+      if (pedal < 2 && regenKw != null && limit != null && regenKw >= limit * 0.9)
+        add("TIP", `Regen is at its limit (${Math.floor(regenKw)} kW). Lift off earlier and more gently so slowing stays on regen, not friction.`, "pedal.regenAtLimit");
+      else if (pedal < 2 && regenKw != null && a < -2.5) add("TIP", "Sharp slowdown from a quick lift-off. Ease the pedal up gradually: smoother regen, fewer losses.", "pedal.sharpLift");
+      else if (pedal < 2 && regenKw != null) add("GOOD", `One-pedal slowing, recovering ${Math.floor(regenKw)} kW. Keep lifting gradually to stop where you want.`, "pedal.onePedal");
+      else if (pedal < 2) add("GOOD", "Coasting. Staying off the pedal is the cheapest way to travel.", "pedal.coast");
+      else if (pedal <= 15 && a < -0.3) add("GOOD", "Feathering the pedal to slow down: regen is doing the work. Release a little more to slow faster.", "pedal.feather");
+      else if (pedal >= ECO_LOW && pedal <= ECO_HIGH && a > 0.3) add("GOOD", `Smooth acceleration (${Math.floor(pedal)}% pedal). Ease off as you reach your speed.`, "pedal.smooth");
+      else if (pedal <= 15 && a <= 0.1 && g < 1) add("TIP", "Light pedal at a steady speed. If the road ahead allows, lift off and coast.", "pedal.lightSteady");
+      else if (pedal > ECO_HIGH && underLoad) add("GOOD", `Holding speed uphill takes this pedal (${Math.floor(pedal)}%). That's right: steady is cheaper than speeding up.`, "pedal.underLoad");
+      else if (pedal > ECO_HIGH) add("TIP", `Pedal ${Math.floor(pedal)}%. Ease back toward ${ECO_HIGH}% or less: most of the speed for much less energy.`, "pedal.heavy");
+    }
+    if (grade != null && moving) {
+      if (grade > 3) add("TIP", `Uphill (${Math.trunc(grade)}%): high draw is normal. Hold a steady speed and don't chase speed limits.`, "grade.up");
+      if (grade < -2 && pedal != null && pedal < 2) add("GOOD", "Downhill: let regen carry you and keep off the pedal.", "grade.downOff");
+      if (grade < -2 && pedal != null && pedal >= 2) add("TIP", "Downhill: lift off the pedal and let regen and gravity do the work.", "grade.downOn");
+    }
+    if (outsideC != null) {
+      if (outsideC < 5) add("TIP", `Cold air (${tF(outsideC)} °F): higher Wh/mi is normal. Precondition while plugged in, and use seat heat over cabin heat.`, "air.cold");
+      if (outsideC > 30 && (hvacKw ?? 0) > 2) add("TIP", `Hot day (${tF(outsideC)} °F): A/C is a big share of the draw. Park in shade and precondition while plugged in.`, "air.hot");
+    }
+    if (cruiseOn && moving) add("TIP", "Cruise is holding speed. Set it at or under the limit; on rolling hills your own light pedal can use less energy.", "cruise");
+    if (hvacKw != null && hvacKw > 3) add("TIP", `Climate is using ${hvacKw.toFixed(1)} kW. Seat heat or a lower setpoint costs less range.`, "climate");
+    if (kmh != null && kmh > 112) add("TIP", "Above ~70 mph aero drag rises sharply: a few mph less adds noticeable range.", "aero");
+    out.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+    out.push({ level: "TIP", text: "For max range: look ahead, lift off the pedal early and coast to slow down instead of braking late.", kind: "coast", standing: true });
+    return out;
+  }
+
+  function createCoach({ loadBuckets, saveBuckets } = {}) {
+    const c = {
+      zone: null, lastMph: null, accel: 0,
+      driveSec: 0, pressedSec: 0, rightSec: 0, heavyEvents: 0, frictionEvents: 0, wasHeavy: false, wasFriction: false,
+      headline: null, headAt: 0, list: [], cruiseOn: false,
+      buckets: migrate((loadBuckets && loadBuckets()) || {}), lastSave: 0,
+    };
+    function migrate(b) { const o = {}; for (const k in b) o[String(k).includes("|") ? k : `${k}|x`] = b[k]; return o; }
+
+    function resetTrip() { Object.assign(c, { driveSec: 0, pressedSec: 0, rightSec: 0, heavyEvents: 0, frictionEvents: 0, wasHeavy: false, wasFriction: false }); }
     function resetBuckets() { c.buckets = {}; if (saveBuckets) saveBuckets(c.buckets); }
 
-    function table() {
-      const rows = Object.keys(c.buckets).map(Number).sort((a, b) => a - b)
-        .map(b => ({ mph: b, mi: c.buckets[b].mi, wh: (c.buckets[b].kwh * 1000) / c.buckets[b].mi }))
+    function table(outsideC) {
+      const tb = tempBand(outsideC), agg = {};
+      for (const k in c.buckets) {
+        const [b, t] = k.split("|");
+        if (tb !== "x" && t !== tb) continue;          // known temperature: show that band only
+        const a = (agg[b] ||= { kwh: 0, mi: 0 }); a.kwh += c.buckets[k].kwh; a.mi += c.buckets[k].mi;
+      }
+      const rows = Object.keys(agg).map(Number).sort((a, b) => a - b)
+        .map(b => ({ mph: b, mi: agg[b].mi, wh: (agg[b].kwh * 1000) / agg[b].mi }))
         .filter(r => r.mi >= 0.5 && r.wh > 50 && r.wh < 800);
       const fast = rows.filter(r => r.mph >= 25);
-      const sweet = fast.length ? fast.reduce((a, b) => (b.wh < a.wh ? b : a)) : null;
-      return { rows, sweet };
+      return { rows, sweet: fast.length ? fast.reduce((a, b) => (b.wh < a.wh ? b : a)) : null, band: tb };
     }
 
-    function pick(tip, now) {
-      // Hold a tip at least 3 s so the line doesn't flicker; a higher-priority tip can cut in.
-      if (!c.tip || now - c.tipAt > 3000 || tip.prio > c.tip.prio || tip.key === c.tip.key) {
-        if (!c.tip || tip.key !== c.tip.key) c.tipAt = now;
-        c.tip = tip;
-      }
-    }
+    // x: { pedal, kw, mph, brake, soc, tMin, tMax, hvacKw, regenLimitKw, grade, outsideC, gear }
+    function update(x, dt, now) {
+      const mph = x.mph ?? 0;
+      const raw = c.lastMph != null && dt > 0 ? ((mph - c.lastMph) / dt) / MPH_PER_MS : 0;   // m/s²
+      c.accel += (raw - c.accel) * Math.min(1, dt / 1.5); c.lastMph = mph;
+      c.zone = pedalZone(x.pedal, c.accel, x.grade, c.zone);
+      const moving = mph * 1.609344 > 5 && x.gear !== "P";
+      const list = cues({ ...x, accelMs2: c.accel, cruiseOn: c.cruiseOn });
+      c.list = list;
 
-    // Call ~4×/s. kw = smoothed pack power (+ = using), dt in seconds.
-    function update(L, kw, dt, now) {
-      const mph = L.speedMph ?? 0, pedal = L.pedalPct, brake = L.brakeOn === true;
-      const moving = mph > 2 && L.gear !== "P";
-      if (pedal != null && c.lastPedal != null && dt > 0) {
-        const rate = Math.abs(pedal - c.lastPedal) / dt;                  // %/s
-        c.jerk += (rate - c.jerk) * Math.min(1, dt / 3);                  // ~3 s average
-      }
-      const rawAccel = c.lastMph != null && dt > 0 ? (mph - c.lastMph) / dt : 0;
-      c.accel = (c.accel ?? 0) + (rawAccel - (c.accel ?? 0)) * Math.min(1, dt / 1.5);   // ~1.5 s average
-      const accel = c.accel;
-      c.lastPedal = pedal; c.lastMph = mph;
+      if (moving) {
+        c.driveSec += dt;
+        if (x.pedal != null && x.pedal >= 2 && !c.cruiseOn) { c.pressedSec += dt; if (c.zone === "RIGHT") c.rightSec += dt; }
+        const heavy = list.some(q => q.kind === "pedal.heavy");
+        if (heavy && !c.wasHeavy) c.heavyEvents++; c.wasHeavy = heavy;
+        const fr = list.some(q => q.kind === "brake.friction");
+        if (fr && !c.wasFriction) c.frictionEvents++; c.wasFriction = fr;
+        // Learn Wh/mi per 5-mph band and outside-temperature band from steady cruising only.
+        if (x.kw != null && mph >= 20 && Math.abs(c.accel) < 0.18 && x.brake !== true) {
+          const k = `${Math.floor(mph / 5) * 5}|${tempBand(x.outsideC)}`, b = (c.buckets[k] ||= { kwh: 0, mi: 0 });
+          b.kwh += (x.kw * dt) / 3600; b.mi += (mph * dt) / 3600;
+          if (saveBuckets && now - c.lastSave > 15000) { saveBuckets(c.buckets); c.lastSave = now; }
+        }
+        // Drive Energy addition: your own data says the next band down is cheaper.
+        const { rows } = table(x.outsideC), band = Math.floor(mph / 5) * 5;
+        const here = rows.find(r => r.mph === band), slower = rows.find(r => r.mph === band - 5);
+        if (here && slower && mph >= 55 && here.wh > slower.wh * 1.06 && !list.some(q => q.level === "WARN")) {
+          const at = list.findIndex(q => q.level === "TIP");     // keeps EcoLab order: warnings, good, then tips
+          list.splice(at < 0 ? list.length : at, 0, { level: "TIP", kind: "speed.data",
+            text: `5 mph slower saves about ${Math.round((1 - slower.wh / here.wh) * 100)}% here (${Math.round(here.wh)} → ${Math.round(slower.wh)} Wh/mi in your data).` });
+        }
+      } else { c.wasHeavy = false; c.wasFriction = false; }
 
-      if (!moving) {
-        c.wasHard = false; c.wasBrake = false;
-        pick({ key: "parked", prio: 0, tone: "idle", text: kw != null && kw < -0.3 ? "Charging" : "Parked. Tips show up once you're rolling." }, now);
-        return;
-      }
-      c.driveSec += dt;
-
-      const brakeAtSpeed = brake && mph > BRAKE_SPEED;
-      if (brakeAtSpeed && !c.wasBrake) c.brakeStops++;
-      c.wasBrake = brakeAtSpeed;
-
-      const hard = pedal != null && pedal >= HARD_PEDAL && mph < 50;
-      if (hard && !c.wasHard) c.hardLaunches++;
-      c.wasHard = hard;
-
-      const inGreen = pedal != null && pedal <= greenMax(mph) && c.jerk < JERKY && !brakeAtSpeed;
-      if (inGreen) c.greenSec += dt;
-
-      // Learn Wh/mi per 5-mph band from steady cruising only (no big speed changes).
-      if (kw != null && mph >= 20 && Math.abs(accel) < 0.4 && !brake) {
-        const b = Math.floor(mph / 5) * 5, k = (c.buckets[b] ||= { kwh: 0, mi: 0 });
-        k.kwh += (kw * dt) / 3600; k.mi += (mph * dt) / 3600;
-        if (c.persist && saveBuckets && now - c.lastSave > 15000) { saveBuckets(c.buckets); c.lastSave = now; }
-      }
-
-      // Tip, highest priority first.
-      if (pedal == null) { pick({ key: "nopedal", prio: 1, tone: "idle", text: "Pedal data isn't on this connection." }, now); return; }
-      if (brakeAtSpeed) return pick({ key: "brake", prio: 6, tone: "bad", text: "Brake pedal at speed: lift off earlier and let regen slow you." }, now);
-      if (hard) return pick({ key: "hard", prio: 5, tone: "warn", text: `Ease in: keep take-offs under ${greenMax(mph)}% pedal.` }, now);
-      if (c.jerk > JERKY) return pick({ key: "jerky", prio: 4, tone: "warn", text: "Smooth it out. A steady foot beats pumping the pedal." }, now);
-      const { rows, sweet } = table();
-      const here = rows.find(r => r.mph === Math.floor(mph / 5) * 5), slower = rows.find(r => r.mph === Math.floor(mph / 5) * 5 - 5);
-      if (here && slower && mph >= 55 && here.wh > slower.wh * 1.06) {
-        const save = Math.round((1 - slower.wh / here.wh) * 100);
-        return pick({ key: "speed", prio: 3, tone: "warn", text: `5 mph slower saves about ${save}% here (${Math.round(here.wh)} → ${Math.round(slower.wh)} Wh/mi in your data).` }, now);
-      }
-      if (pedal === 0 && kw != null && kw < -2) return pick({ key: "regen", prio: 2, tone: "good", text: `Regen on: recovering ${Math.abs(kw).toFixed(0)} kW.` }, now);
-      if (inGreen) return pick({ key: "green", prio: 1, tone: "good", text: sweet ? `Efficient. Your sweet spot is ${sweet.mph}–${sweet.mph + 4} mph at ${Math.round(sweet.wh)} Wh/mi.` : "Efficient. Keep it right here." }, now);
-      return pick({ key: "over", prio: 2, tone: "warn", text: `Pedal past the green zone (${greenMax(mph)}% at this speed).` }, now);
+      // Headline: hold a kind ≥3 s unless a warning arrives (EcoLab holds per kind so live numbers can update).
+      const parkedText = x.gear === "P" ? (x.kw != null && x.kw < -0.3 ? "Charging." : "Parked. Coaching starts once you're rolling.") : "Stopped.";
+      const top = moving ? list[0] : { level: "TIP", kind: "parked", text: parkedText };
+      const h = c.headline;
+      if (!h || top.kind === h.kind) { if (!h) c.headAt = now; c.headline = top; }
+      else if (now - c.headAt > 3000 || (top.level === "WARN" && h.level !== "WARN") || (top.kind === "parked") !== (h.kind === "parked")) { c.headline = top; c.headAt = now; }
+      else { const cur = list.find(q => q.kind === h.kind); if (cur) c.headline = cur; }   // same kind, fresh numbers
     }
 
     return {
-      update, resetTrip, resetBuckets, table, greenMax,
+      update, resetTrip, resetBuckets, table,
       get state() { return c; },
-      score() { return c.driveSec > 20 ? Math.round((c.greenSec / c.driveSec) * 100) : null; },
-      setPersist(on) { c.persist = on; },
+      score() { return c.pressedSec > 15 ? Math.round((c.rightSec / c.pressedSec) * 100) : null; },
+      setCruise(on) { c.cruiseOn = !!on; },
     };
   }
 
-  const api = { createCoach, greenMax };
+  const api = { createCoach, cues, pedalZone, rawZone, ECO_LOW, ECO_HIGH, tempBand };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Coach = api;
 })(typeof self !== "undefined" ? self : this);

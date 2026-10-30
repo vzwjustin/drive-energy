@@ -39,6 +39,9 @@
     TOTALS: 0x3D2,    // lifetime kWh out / in
     SPEED: 0x257,
     DRIVE: 0x118,     // accelerator pedal, brake pedal, gear
+    GRADE: 0x267,     // DI_gradeEst, road grade %
+    AMBIENT: 0x321,   // VCFRONT_tempAmbientFiltered
+    COMPRESSOR: 0x2A8, // CMPD_inputHVPower (heat-pump compressor)
     BRICKS: 0x401,
   };
 
@@ -67,7 +70,8 @@
         }
         case IDS.POWER_AVAIL:
           out.maxRegenKW = bits(b, 0, 16) * 0.01;
-          out.maxDischargeKW = bits(b, 16, 16) * 0.01;
+          out.maxDischargeKW = bits(b, 16, 16) * 0.013;     // tes•LAX scale; disputed, used only to scale the power bar
+          out.hvacBudgetKW = bits(b, 50, 10) * 0.02;
           return "limits";
         case IDS.SOC:
           out.socMin = bits(b, 0, 10) * 0.1;
@@ -82,8 +86,7 @@
         case IDS.UI_RANGE:
           out.ratedRangeMi = bits(b, 0, 10);
           out.idealRangeMi = bits(b, 16, 10);
-          out.ratedWhPerMi = bits(b, 32, 10);
-          out.uiSOC = bits(b, 48, 7);
+          out.uiSOC = bits(b, 48, 7);       // (the old "ratedWHpM" field here is an artifact on current firmware)
           return "range";
         case IDS.ENERGY: return decode352(b);
         case IDS.ODO: {
@@ -105,6 +108,19 @@
           out.gear = ({ 1: "P", 2: "R", 3: "N", 4: "D" })[bits(b, 21, 3)] || null;
           return "drive";
         }
+        case IDS.GRADE: {
+          const g = bits(b, 33, 7, true);
+          out.gradePct = g === -64 ? null : g;
+          return "grade";
+        }
+        case IDS.AMBIENT: {
+          const raw = bits(b, 40, 8);
+          out.outsideC = raw === 255 ? null : raw * 0.5 - 40;
+          return "ambient";
+        }
+        case IDS.COMPRESSOR:
+          out.compressorKW = (bits(b, 21, 11) * 10) / 1000;
+          return "hvac";
         case IDS.SPEED: {
           const kph = bits(b, 12, 12) * 0.08 - 40;
           out.speedMph = Math.max(0, kph / 1.609344);

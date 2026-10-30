@@ -8,7 +8,7 @@ A live energy screen that reads the Model 3 vehicle CAN bus through an **OBDLink
 
 | Item | Requirement |
 |---|---|
-| Adapter | OBDLink MX+ (STN chip) on your Model 3 diagnostic harness, the same setup Scan My Tesla uses |
+| Adapter | **OBDLink MX+** (STN chip) or **vLinker FS / MC+ / other ELM327-class** Bluetooth Classic adapter on your Model 3 diagnostic harness |
 | Phone/tablet | Android with **Chrome 138 or newer** (Web Serial over Bluetooth shipped in 138) |
 | Hosting | Any **https://** address. Web Serial refuses plain http. GitHub Pages works and is free. |
 
@@ -34,23 +34,26 @@ To try it locally on a desktop first, run `npx serve .` in this folder. Desktop 
 
 On later visits, Chrome remembers the adapter, so **Connect car** skips the chooser.
 
-## Efficiency coach (needs the adapter)
+## Range coach (needs the adapter)
 
-The coach reads the **accelerator pedal %**, **brake pedal** and **gear** from `0x118` along with speed and pack power, and gives one short tip under the power bar:
+Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjustin/eco, `core/sim/RangeCoach.kt`), so both apps coach the same way. Listen-only.
 
-| Tip | Triggers when |
-|---|---|
-| Brake pedal at speed | You're on the brake above **8 mph**. Lifting earlier lets regen recover that energy instead |
-| Ease in | Pedal is at or above **60%** below 50 mph (a hard take-off) |
-| Smooth it out | Pedal movement averages more than about 22%/s over 3 s |
-| 5 mph slower saves X% | You're at 55 mph or more and your own data shows the next band down is at least 6% cheaper |
-| Regen on | Foot off the pedal and recovering more than 2 kW |
-| Efficient | Pedal is inside the green zone: **30%** under 25 mph, **40%** from 25–49 mph, **50%** at 50 mph and up |
-
-- **In the green** is the share of driving time with the pedal in the green zone, smooth, and off the brake.
-- **Your speed vs Wh/mi** learns consumption per 5-mph band from steady cruising only (speed changing less than 0.4 mph/s, no brake). It's saved on the phone across trips, and the amber row is your most efficient band. Tap **Reset** to start it over, for example after a tire or wheel change.
-- The green-zone limits are starting guides, not Tesla figures. Watch which tips fire on your normal commute and tell me if they feel too strict or too loose.
-- Glance only: the tip is large so you never need to tap anything while driving.
+- **Pedal bar:** green zone **15–40%**, with 1% hysteresis so the color doesn't flicker. Light (<15%) is amber, too much (>40%) is red, and while lifting off it shows the regen being recovered.
+- **Uphill exemption:** a heavy pedal that's only holding speed uphill (car's `DI_gradeEst` above 2%, not accelerating) counts as in range.
+- **Cue order:** warnings first, then good, then tips. The top cue is the headline (held at least 3 s), the next one shows underneath, and a "look ahead and coast" reminder is always last.
+- **Cues:**
+  - Pack cold, pack hot, low charge with high draw
+  - Near full (>95%) so regen is limited, or regen limited below 15 kW
+  - Braking with little regen
+  - Regen at its limit, sharp lift-off
+  - One-pedal slowing, coasting, feathering, smooth acceleration
+  - Light pedal at a steady speed, holding speed uphill, heavy pedal
+  - Uphill/downhill, cold or hot air, climate draw over 3 kW, cruise on, above ~70 mph
+- **Drive Energy addition:** "5 mph slower saves X%", based on your own speed table.
+- **Speed vs Wh/mi** is learned from steady cruising and split by outside temperature (<40, 40–59, 60–79, 80+ °F).
+- **Cruise / Autopilot on** toggle: the cruise signal isn't on the vehicle bus, so tap it while cruise is holding speed. That turns off pedal coaching and adds the cruise tip.
+- Not covered here: EcoLab's wind estimate, tire-pressure, and speed-limit cues. Those frames usually aren't on the OBD vehicle bus.
+- **Not validated on a car**, same as EcoLab: the 15–40% zone is a starting estimate.
 
 ## Away from the car: Tessie mode
 
@@ -67,12 +70,15 @@ Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter
 |---|---|---|
 | Power (kW), volts, amps | `0x132` | V × I; positive means drawing from the pack, negative means regen or charging |
 | Speed | `0x257` | Drive-inverter vehicle speed |
-| Accelerator %, brake, gear | `0x118` | Feeds the efficiency coach |
+| Accelerator %, brake, gear | `0x118` | Feeds the range coach |
+| Road grade | `0x267` | `DI_gradeEst`, for the uphill exemption |
+| Outside temp | `0x321` | Splits the speed table, plus cold/hot cues |
+| Compressor power | `0x2A8` | Climate-draw cue |
 | Energy used | `0x3D2` | Lifetime kWh out and in, 1 Wh resolution. Trip energy = Δout − Δin, so regen is included exactly |
 | Distance | `0x3B6` | Odometer, 0.001 km |
 | Remaining / full pack / buffer | `0x352` | Handles both the pre-2021 layout and the 2021+ multiplexed layout (auto-detected) |
 | SOC | `0x292` | Displayed (UI) SOC |
-| Rated range, rated Wh/mi | `0x33A` | The dashed "rated" line on the chart |
+| Rated range | `0x33A` | Rated Wh/mi (dashed chart line) = (remaining − buffer) ÷ rated range. 0x33A's old Wh/mi field is an artifact |
 | Pack temp min/max | `0x312` | |
 | Regen/discharge limits | `0x252` | Scales the power bar |
 | 108 brick voltages | `0x401` | Multiplexed, 3 bricks per frame |
@@ -105,17 +111,18 @@ Tap **Record CSV** to log one row per second: speed, power, V/A, odometer, kWh c
 | "No reply to ATZ" | Unplug and replug the MX+, toggle Bluetooth, and tap Connect car again |
 | Chip says **No CAN traffic** | The car is asleep, or the harness isn't on the vehicle bus. Open a door to wake it |
 | Values freeze, then recover | The adapter buffer overflowed. The app restarts monitoring automatically |
-| Adapter rejected ("needs an OBDLink/STN adapter") | Cheap ELM327 clones can't filter several IDs. Use the MX+ |
+| "didn't confirm silent monitoring (ATCSM1)" | The adapter can't promise it won't acknowledge frames on the bus, so the app refuses to listen. Try another adapter |
+| vLinker numbers update slowly | Expected: ELM-class adapters rotate through ID groups (~1 s refresh). An OBDLink MX+ streams continuously |
 
 ## Files
 
 - `index.html`: layout and styles
 - `app.js`: connection, trip math, rendering, CSV
-- `elm.js`: STN/ELM command link over Web Serial
+- `elm.js`: adapter link over Web Serial: STN pass filters, or ELM327/vLinker round-robin (`ATCRA` groups, `ATCF`/`ATCM` fallback)
 - `decode.js`: CAN signal decoders (usable in Node)
 - `coach.js`: pedal/brake efficiency coach and speed-band learning
 - `sim.js`: demo frame generator (the **Demo** button)
 - `sw.js`, `manifest.webmanifest`, `icon.svg`: offline install
-- `tests/decode.test.js`: run with `node tests/decode.test.js`
+- `tests/decode.test.js`, `tests/elm.test.js`: run with `node tests/decode.test.js && node tests/elm.test.js`
 
 Signal layouts come from the community DBC at github.com/joshwardell/model3dbc (MIT) and the 2021+ `0x352` mux layout documented in the Battery-Emulator project. This is unofficial and not affiliated with Tesla.

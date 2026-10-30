@@ -60,6 +60,32 @@ t("0x118 accelerator pedal, brake, gear", () => {
   D.setBits(b, 32, 8, 255); dec.decode(0x118, b); assert.strictEqual(dec.state.pedalPct, null);
 });
 
+t("grade, ambient temp, compressor power", () => {
+  const dec = D.createDecoder();
+  let b = new Array(8).fill(0); D.setBits(b, 33, 7, -4); dec.decode(0x267, b); assert.strictEqual(dec.state.gradePct, -4);
+  b = new Array(8).fill(0); D.setBits(b, 40, 8, (21.5 + 40) / 0.5); dec.decode(0x321, b); near(dec.state.outsideC, 21.5, 1e-9, "ambient");
+  b = new Array(8).fill(0); D.setBits(b, 21, 11, 123); dec.decode(0x2A8, b); near(dec.state.compressorKW, 1.23, 1e-9, "cmpd");
+});
+
+t("coach: pedal zones match EcoLab (15–40%, 1% hysteresis, uphill exemption)", () => {
+  const C = require("../coach.js");
+  assert.strictEqual(C.rawZone(1), "OFF"); assert.strictEqual(C.rawZone(10), "LIGHT"); assert.strictEqual(C.rawZone(30), "RIGHT"); assert.strictEqual(C.rawZone(45), "TOO_MUCH");
+  assert.strictEqual(C.pedalZone(40.5, 1, 0, "RIGHT"), "RIGHT");        // within hysteresis of the 40% edge
+  assert.strictEqual(C.pedalZone(41.5, 1, 0, "RIGHT"), "TOO_MUCH");
+  assert.strictEqual(C.pedalZone(55, 0.1, 4, null), "RIGHT");           // holding speed uphill
+});
+
+t("coach: cues follow EcoLab priorities", () => {
+  const C = require("../coach.js");
+  const base = { pedal: 0, kw: -40, mph: 40, brake: false, soc: 60, tMin: 25, tMax: 27, hvacKw: 0.5, regenLimitKw: 42, accelMs2: -1, grade: 0, outsideC: 20 };
+  assert.strictEqual(C.cues(base)[0].kind, "pedal.regenAtLimit");
+  assert.strictEqual(C.cues({ ...base, kw: 30, pedal: 55, accelMs2: 0.5 })[0].kind, "pedal.heavy");
+  assert.strictEqual(C.cues({ ...base, kw: 45, pedal: 55, tMin: 5 })[0].kind, "pack.coldDraw");   // WARN sorts first
+  const br = C.cues({ ...base, brake: true, kw: 2, pedal: 0 }).map(q => q.kind);   // EcoLab order: GOOD before TIP
+  assert.ok(br.includes("brake.friction") && br.indexOf("pedal.coast") < br.indexOf("brake.friction"));
+  const l = C.cues({ ...base, mph: 0 }); assert.strictEqual(l[l.length - 1].kind, "coast");
+});
+
 t("odometer, totals, speed", () => {
   const dec = D.createDecoder();
   let b = new Array(4).fill(0); D.setBits(b, 0, 32, 56013.123 / 0.001); dec.decode(0x3B6, b);

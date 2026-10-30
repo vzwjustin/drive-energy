@@ -107,13 +107,19 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .cfg .check{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--fg)}
 .pedal{margin-top:14px}
 .prow{display:flex;align-items:center;gap:10px;margin-bottom:5px}
-.prow .num{font-weight:600;font-size:16px;margin-right:auto}
+.prow .num{font-weight:600;font-size:16px}
 .brake{font:600 11.5px var(--f-body);letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--faint)}
 .brake[data-on="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
 .ptrack{position:relative;height:12px;background:var(--raised);border-radius:6px;overflow:hidden}
-.pgreen{position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--regen) 22%,transparent);border-right:2px solid var(--regen);transition:width .4s}
-.pfill{position:absolute;inset:3px auto 3px 0;border-radius:3px;background:var(--regen);transition:width .15s linear}
-.pfill[data-tone="over"]{background:var(--warn)}
+.pgreen{position:absolute;top:0;bottom:0;left:15%;width:25%;background:color-mix(in srgb,var(--regen) 22%,transparent);border-left:2px solid var(--regen);border-right:2px solid var(--regen)}
+.pfill{position:absolute;inset:3px auto 3px 0;border-radius:3px;background:var(--rated);transition:width .15s linear}
+.pfill[data-zone="RIGHT"]{background:var(--regen)} .pfill[data-zone="LIGHT"]{background:var(--warn)} .pfill[data-zone="TOO_MUCH"]{background:var(--bad)}
+.pscale{position:relative;height:14px;font:500 11px var(--f-num);color:var(--muted)}
+.pscale span{position:absolute;transform:translateX(-50%);top:2px}
+.zone{font-size:12.5px;color:var(--muted);margin-right:auto}
+.tip2{margin:6px 2px 0;font-size:14px;color:var(--muted);min-height:20px}
+.toggle{margin-top:12px;font-size:13px;padding:6px 12px}
+.toggle[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#08130f}
 .tip{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--raised);font-size:19px;font-weight:600;line-height:1.3;border-left:4px solid var(--faint);min-height:52px}
 .tip[data-tone="good"]{border-left-color:var(--regen)} .tip[data-tone="warn"]{border-left-color:var(--warn)} .tip[data-tone="bad"]{border-left-color:var(--bad)}
 .kv .v[data-tone="good"]{color:var(--regen)}
@@ -156,10 +162,12 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <div class="scale"><span><span id="pmin">−60</span> kW regen</span><span>0</span><span><span id="pmax">200</span> kW</span></div>
     </div>
     <div class="pedal">
-      <div class="prow"><span class="label">Accelerator</span><span class="num" id="pedalPct">—</span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
-      <div class="ptrack" aria-hidden="true"><div class="pgreen" id="pedalGreen"></div><div class="pfill" id="pedalFill"></div></div>
+      <div class="prow"><span class="label">Accelerator</span><span class="num" id="pedalPct">—</span><span class="zone" id="pedalZone"></span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
+      <div class="ptrack" aria-hidden="true"><div class="pgreen"></div><div class="pfill" id="pedalFill"></div></div>
+      <div class="pscale" aria-hidden="true"><span style="left:15%">15</span><span style="left:40%">40%</span></div>
     </div>
     <p class="tip" id="tip" data-tone="idle" aria-live="polite">Connect the car to start coaching.</p>
+    <p class="tip2" id="tip2"></p>
   </section>
 
   <div class="grid">
@@ -178,14 +186,15 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <section class="panel" aria-label="Coach">
         <h2>Coach <span>this trip</span></h2>
         <div class="kv" style="grid-template-columns:1fr 1fr">
-          <div><div class="label">In the green</div><div class="v" id="cScore">—</div></div>
-          <div><div class="label">Pedal</div><div class="v" id="cSmooth">—</div></div>
-          <div><div class="label">Hard take-offs</div><div class="v" id="cHard">0</div></div>
-          <div><div class="label">Brake at speed</div><div class="v" id="cBrake">0</div></div>
+          <div><div class="label">Pedal in range</div><div class="v" id="cScore">—</div></div>
+          <div><div class="label">Road grade</div><div class="v" id="cGrade">—</div></div>
+          <div><div class="label">Heavy pedal</div><div class="v" id="cHard">0</div></div>
+          <div><div class="label">Braking, little regen</div><div class="v" id="cBrake">0</div></div>
         </div>
-        <div class="label" style="margin-top:16px">Your speed vs Wh/mi</div>
+        <button class="btn toggle" id="cruiseBtn" type="button" aria-pressed="false">Cruise / Autopilot on</button>
+        <div class="label" style="margin-top:16px">Your speed vs Wh/mi <span id="tempBand" style="text-transform:none;letter-spacing:0"></span></div>
         <div id="speedTable" class="stable"></div>
-        <p class="note">Learned from your steady cruising and kept on this phone. The amber row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
+        <p class="note">Learned from your steady cruising, split by outside temperature, and kept on this phone. The amber row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
       </section>
 
       <section class="panel" aria-label="Battery">

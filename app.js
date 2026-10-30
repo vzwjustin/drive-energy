@@ -66,7 +66,7 @@
       resetDecoder();
       await link.startMonitor();
       status("live", "Live");
-      $("adapter").textContent = link.chip.replace(/\s+/g, " ");
+      $("adapter").textContent = `${link.chip.replace(/\s+/g, " ")} · ${link.mode === "stn" ? "STN filters, continuous" : "ELM round-robin, ~1 s refresh"} · listen-only`;
       keepAwake();
     } catch (e) {
       const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the OBDLink MX+ in Android Bluetooth settings first, then tap Connect car." : (e.message || String(e));
@@ -144,7 +144,10 @@
       }
       if ((app.source === "car" || app.source === "tessie") && now - app.lastSave > 10000) { store(tripKey(app.source), t); app.lastSave = now; }
     }
-    if (live && (app.source === "car" || app.source === "demo")) app.coach.update(L, app.pEma, app.source === "demo" ? dt * DEMO_SPEED : dt, now);
+    if (live && (app.source === "car" || app.source === "demo")) app.coach.update({
+      pedal: L.pedalPct, kw: app.pEma, mph: L.speedMph, brake: L.brakeOn, gear: L.gear, soc: L.socUI ?? L.uiSOC,
+      tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
+    }, app.source === "demo" ? dt * DEMO_SPEED : dt, now);
     if (app.rec && app.source && now - app.rec.last >= 1000) record(now);
     if (app.source === "car") status(live ? "live" : "quiet", live ? "Live" : "No CAN traffic");
     if (app.source === "tessie" && app.tessieAt) status(live ? "tessie" : "quiet", `Tessie · ${app.carState === "asleep" ? "car asleep · " : ""}${age(Date.now() - app.tessieAt)}`);
@@ -180,7 +183,7 @@
     const tripMi = t ? t.lastOdo - t.odo0 : 0, tripAvg = t && tripMi > 0.3 ? (t.drive * 1000) / tripMi : null;
     const wAvg = windowAvg(t, cfg.win);
     set("avg", fx(wAvg), "Wh/mi"); $("avgLabel").textContent = `Avg · last ${cfg.win} mi`;
-    const rated = L.ratedWhPerMi > 100 ? L.ratedWhPerMi : null;
+    const rated = ratedWh();
     $("avgSub").textContent = wAvg && rated ? `${Math.round((rated / wAvg) * 100)}% of rated (${rated} Wh/mi)` : rated ? `rated ${rated} Wh/mi` : "builds as you drive";
     const usable = L.energyRemainingKWh != null ? Math.max(0, L.energyRemainingKWh - (L.bufferKWh ?? 0)) : null;
     const basis = wAvg ?? tripAvg;
@@ -214,27 +217,44 @@
   }
 
   function renderCoach(live) {
-    const C = app.coach, st = C.state, mph = L.speedMph ?? 0, pedal = L.pedalPct;
-    const gm = C.greenMax(mph);
-    $("pedalGreen").style.width = `${gm}%`;
+    const C = app.coach, st = C.state, mph = L.speedMph ?? 0, pedal = L.pedalPct, zone = st.zone;
     $("pedalFill").style.width = `${pedal ?? 0}%`;
-    $("pedalFill").dataset.tone = pedal == null ? "" : pedal > gm ? "over" : "ok";
+    $("pedalFill").dataset.zone = pedal == null ? "" : zone || "";
     $("pedalPct").textContent = pedal == null ? "—" : `${Math.round(pedal)}%`;
+    $("pedalZone").textContent = pedal == null ? "" : ({ OFF: (app.pEma ?? 0) < -1 ? `regen ${Math.round(-app.pEma)} kW` : "off", LIGHT: "light", RIGHT: "in range", TOO_MUCH: "too much" })[zone] || "";
     $("brakePill").dataset.on = String(L.brakeOn === true);
-    const tip = $("tip");
+    const tip = $("tip"), tip2 = $("tip2");
+    tip2.textContent = "";
     if (app.source === "tessie") { tip.textContent = "Pedal coaching needs the adapter. Tessie doesn't send pedal or brake data."; tip.dataset.tone = "idle"; }
     else if (!app.source || !live) { tip.textContent = app.source ? "Waiting for the car…" : "Connect the car to start coaching."; tip.dataset.tone = "idle"; }
-    else if (st.tip) { tip.textContent = st.tip.text; tip.dataset.tone = st.tip.tone; }
+    else if (st.headline) {
+      tip.textContent = st.headline.text;
+      tip.dataset.tone = st.headline.kind === "parked" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
+      const next = st.headline.kind !== "parked" && st.list.find(q => q.kind !== st.headline.kind && !q.standing);
+      tip2.textContent = next ? next.text : "";
+    }
     const sc = C.score();
     set("cScore", sc == null ? "—" : String(sc), sc == null ? "" : "%");
     $("cScore").dataset.tone = sc == null ? "" : sc >= 75 ? "good" : sc >= 50 ? "warn" : "bad";
-    $("cHard").textContent = String(st.hardLaunches); $("cBrake").textContent = String(st.brakeStops);
-    $("cSmooth").textContent = st.driveSec < 5 ? "—" : st.jerk < 10 ? "Smooth" : st.jerk < 22 ? "OK" : "Choppy";
-    const { rows, sweet } = C.table(), box = $("speedTable");
-    if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile.</p>`; return; }
+    $("cHard").textContent = String(st.heavyEvents); $("cBrake").textContent = String(st.frictionEvents);
+    set("cGrade", L.gradePct == null ? "—" : `${L.gradePct > 0 ? "+" : ""}${L.gradePct}`, L.gradePct == null ? "" : "%");
+    $("cruiseBtn").setAttribute("aria-pressed", String(st.cruiseOn));
+    const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
+    $("tempBand").textContent = band === "x" ? "" : `at ${band} °F outside`;
+    if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile${band === "x" ? "" : " at this outside temperature"}.</p>`; return; }
     const max = Math.max(...rows.map(r => r.wh)), cur = Math.floor(mph / 5) * 5;
     box.innerHTML = rows.map(r => `<div class="srow${sweet && r.mph === sweet.mph ? " sweet" : ""}${mph > 2 && r.mph === cur ? " cur" : ""}">
       <span class="num">${r.mph}–${r.mph + 4}</span><span class="sbar"><i style="width:${(r.wh / max) * 100}%"></i></span><span class="num">${Math.round(r.wh)}</span></div>`).join("");
+  }
+
+  // Rated Wh/mi isn't broadcast (0x33A's old field is an artifact), so derive it from usable energy ÷ rated range.
+  let ratedEma = null;
+  function ratedWh() {
+    const rem = L.energyRemainingKWh, range = L.ratedRangeMi;
+    if (rem == null || !(range > 20)) return ratedEma ? Math.round(ratedEma) : null;
+    const v = ((rem - (L.bufferKWh ?? 0)) * 1000) / range;
+    if (v > 150 && v < 400) ratedEma = ratedEma == null ? v : ratedEma + (v - ratedEma) * 0.05;
+    return ratedEma ? Math.round(ratedEma) : null;
   }
 
   function renderBricks() {
@@ -288,7 +308,7 @@
       return;
     }
     const narrow = box.clientWidth < 520, W = narrow ? 380 : 640, H = narrow ? 220 : 260, Lp = 40, R = 10, T = 16, B = 24;
-    const iw = W - Lp - R, ih = H - T - B, ys = pts.map(p => p.y), rated = L.ratedWhPerMi > 100 ? L.ratedWhPerMi : null;
+    const iw = W - Lp - R, ih = H - T - B, ys = pts.map(p => p.y), rated = ratedWh();
     const top = Math.max(400, Math.ceil(Math.max(...ys, rated || 0) / 100) * 100), bot = Math.min(0, Math.floor(Math.min(...ys) / 100) * 100);
     const X = x => Lp + (x / w) * iw, Y = y => T + ((top - Math.max(bot, Math.min(top, y))) / (top - bot)) * ih;
     let g = "";
@@ -356,9 +376,7 @@
       if (cs.charge_limit_soc != null) L.chargeLimit = cs.charge_limit_soc;
       // Trip energy from the drop in energy remaining (0.01 kWh steps): out − in = 1000 − remaining.
       L.totalOutKWh = 1000 - bat.energy_remaining; L.totalInKWh = 0;
-      if (!L.ratedWhPerMi && bat.nominal_full_pack_energy && cs.battery_range && cs.battery_level) {
-        L.ratedWhPerMi = Math.round((bat.energy_remaining * 1000) / cs.battery_range);
-      }
+
       app.carState = st.state; app.tessieAt = (bat.timestamp ? bat.timestamp * (bat.timestamp < 1e12 ? 1000 : 1) : Date.now());
       app.frames++; app.lastFrameAt = performance.now();
       if (!$("notice").hidden && $("notice").dataset.tone !== "bad") notice(null);
@@ -415,6 +433,7 @@
   $("cfgTokClear").addEventListener("click", () => { try { localStorage.removeItem(KEY.tok); } catch (e) {} $("cfgTok").value = ""; if (app.source === "tessie") disconnect(); });
   $("recBtn").addEventListener("click", toggleRec);
   $("resetSpeed").addEventListener("click", () => { app.coach.resetBuckets(); render(false); });
+  $("cruiseBtn").addEventListener("click", () => { app.coach.setCruise(!app.coach.state.cruiseOn); render(true); });
   $("dlBtn").addEventListener("click", download);
   document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { cfg.win = +b.dataset.w; store(KEY.cfg, cfg); syncSeg(); lastChart = 0; }));
   function syncSeg() { document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.w === cfg.win))); }
