@@ -7,12 +7,12 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 // Minimal page: every element accepts writes; click(id) runs the element's click handler, fire(type) a document event.
 // scale speeds up the app's own timers (scale 20: Tessie's 10 s poll runs every 0.5 s).
 // storage may be a plain object or the Map from an earlier boot (a reload).
-function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock = null, idb = null } = {}) {
+function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock = null, idb = null, ua = "" } = {}) {
   const els = {}, timers = [], docOn = {}, files = [];
   let reloads = 0;
   const el = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {} }, children: [{ style: {} }, { style: {} }],
     textContent: "", innerHTML: "", hidden: false, value: "", checked: false, open: false, clientWidth: 0, clientHeight: 0, on: {},
-    addEventListener(t, f) { this.on[t] = f; }, showModal() { this.open = true; }, close() { this.open = false; }, setAttribute() {}, focus() {}, scrollIntoView() {}, replaceChildren() {}, appendChild() {}, querySelectorAll: () => [], click() {}, remove() {} });
+    addEventListener(t, f) { this.on[t] = f; }, showModal() { this.open = true; }, close() { this.open = false; }, setAttribute() {}, focus() {}, scrollIntoView() {}, replaceChildren() {}, appendChild() {}, querySelector: () => null, querySelectorAll: () => [], click() {}, remove() {} });
   const store = storage instanceof Map ? storage : new Map(Object.entries(storage).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
   const later = fn => (f, ms, ...a) => { const id = fn(f, (ms || 0) / scale, ...a); timers.push(id); return id; };
   class PageURL extends URL {}
@@ -24,7 +24,7 @@ function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock =
     Option: class { constructor(text, value) { this.text = text; this.value = value; } },
     setTimeout: later(setTimeout), setInterval: later(setInterval), clearTimeout, clearInterval,
     requestAnimationFrame: () => 0, getComputedStyle: () => ({ getPropertyValue: () => "" }), addEventListener() {},
-    location: { protocol: "http:", reload: () => reloads++ }, navigator: { ...(serial && { serial }), ...(wakeLock && { wakeLock }) },
+    location: { protocol: "http:", reload: () => reloads++ }, navigator: { userAgent: ua, ...(serial && { serial }), ...(wakeLock && { wakeLock }) },
     document, ...(idb && { indexedDB: idb.indexedDB, IDBKeyRange: idb.IDBKeyRange }),
     localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) },
   };
@@ -73,10 +73,10 @@ function fakeSerial(...ports) {
   return { ports, getPorts: async () => ports.filter(p => !p.forgotten), requestPort: async () => ports[ports.length - 1], addEventListener() {} };
 }
 
-// car: readings a test can change between polls. Commands (POSTs) are recorded in cmds; one named in refuse gets
+// car: readings a test can change between polls; car.idles is the parked-stretch log. Commands (POSTs) are recorded in cmds; one named in refuse gets
 // { result: false, reason } back, the rest succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false, speed: 0 };
+  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false, speed: 0, idles: [] };
   const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
@@ -85,6 +85,7 @@ function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
       return { ok: true, status: 200, json: async () => (why ? { result: false, reason: why } : { result: true }) };
     }
     const body = /vehicles/.test(url) ? { results: cars }
+      : /idles/.test(url) ? { results: car.idles }
       : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, nominal_full_pack_energy: 75, battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
       : { state: "online", drive_state: { power: 0, speed: car.speed }, vehicle_state: { odometer: car.odometer }, charge_state: {},
           climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
@@ -485,6 +486,42 @@ const test = async (name, fn) => {
     assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).brick, 11); assert.strictEqual(app.text("bWatchLbl"), "Brick 11");
     assert.strictEqual(app.html("bSag"), "—", "a newly watched brick is measured afresh");
     app.stop();
+  });
+
+  await test("Parked: Tessie's idle log fills the card (newest first, place text escaped, Sentry's draw compared)", async () => {
+    const tes = fakeTessie(), now = Math.floor(Date.now() / 1000), h = 3600;
+    tes.car.idles = [
+      { started_at: now - 30 * h, ended_at: now - 20 * h, location: "Work <b>Lot</b>, City", energy_used: 1.0, rated_range_used: 3.5, sentry_fraction: 0, climate_fraction: 0 },
+      { started_at: now - 10 * h, ended_at: now - 6 * h, location: "Home, City", energy_used: 1.2, rated_range_used: 4, sentry_fraction: 1, climate_fraction: 0 },
+    ];
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "trip" } }, fetch: tes.fetch, scale: 20 });
+    await wait(400);
+    assert.ok(tes.calls.some(u => /VIN1\/idles\?from=\d+/.test(u)), "asked Tessie for the log without starting Tessie");
+    assert.ok(app.html("pkLast").startsWith("1.20"), "latest " + app.html("pkLast"));
+    assert.strictEqual(app.text("pkLastSub"), "4 h 0 min · 300 W · Sentry 100%");
+    assert.ok(app.html("pkWeek").startsWith("2.2"), "week " + app.html("pkWeek"));
+    const rows = app.html("pkRows");
+    assert.ok(rows.indexOf("Home") < rows.indexOf("Work"), "newest first");
+    assert.ok(rows.includes("Work &lt;b&gt;Lot&lt;/b&gt;") && !rows.includes("<b>"), "place text escaped");
+    assert.ok(/Sentry on.* 300 W.* 100 W/.test(app.text("pkNote")), app.text("pkNote"));
+    app.stop();
+  });
+
+  await test("car screen: Tessie starts on its own and Connect car means Tessie (no Web Serial there)", async () => {
+    const ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36 Tesla/2026.32.3";
+    const tes = fakeTessie();
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20, ua });
+    await wait(300);
+    assert.ok(/^Tessie · /.test(app.text("chipText")), "chip " + app.text("chipText"));
+    assert.strictEqual(app.el("connectBtn").hidden, true, "nothing to connect while Tessie runs");
+    app.click("disconnectBtn"); await wait(50);
+    assert.strictEqual(app.el("connectBtn").hidden, false);
+    app.click("connectBtn"); await wait(300);
+    assert.ok(/^Tessie · /.test(app.text("chipText")), "Connect car restarted Tessie: " + app.text("chipText"));
+    app.stop();
+    const bare = boot({ ua }); await wait(50);
+    assert.ok(/Tessie API token/.test(bare.text("noticeText")), "no token: " + bare.text("noticeText"));
+    bare.stop();
   });
 
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);

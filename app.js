@@ -22,6 +22,9 @@
 
   const cfg = Object.assign({ win: 15, brick: 38, oneBased: true, keepAwake: true, drive: false, goal: null }, load(KEY.cfg, {}));
   const U = Units; U.set(cfg.units);                     // miles or kilometers on screen (Setup); the math stays in miles
+  // The car's own touchscreen browser (its user agent carries "Tesla/<firmware>"), or ?car to try that layout elsewhere.
+  // It has no Web Serial, so the adapter can't connect there: the numbers come from Tessie.
+  const inCar = /\bTesla\//.test(navigator.userAgent || "") || /[?&]car\b/.test(location.search || "");
   let dec = D.createDecoder(), L = dec.state;
   const app = {
     source: null, link: null, port: null, sim: null, simTimer: null,
@@ -38,9 +41,10 @@
   /* ---------------- status ---------------- */
   function status(kind, text) {
     $("chip").dataset.s = kind; $("chipText").textContent = text;
-    $("connectBtn").hidden = app.source === "car";
+    const on = app.source === "car" || (inCar && app.source === "tessie");   // connected the way this screen can be
+    $("connectBtn").hidden = on;
     $("chooseBtn").hidden = app.source === "car";
-    document.body.classList.toggle("offline", app.source !== "car");
+    document.body.classList.toggle("offline", !on);
     $("disconnectBtn").hidden = app.source !== "car" && app.source !== "tessie";
     $("demoLbl").textContent = app.source === "demo" ? "Stop demo" : "Demo";
     $("tessieLbl").textContent = app.source === "tessie" ? "Stop Tessie" : "Start Tessie";
@@ -310,6 +314,8 @@
     const basis = wAvg ?? tripAvg;
     set("proj", fx(U.dist(usable != null && basis > 50 ? (usable * 1000) / basis : L.ratedRangeMi)), U.d);
     $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(U.wh(basis))} ${U.e} · rated ${fx(U.dist(L.ratedRangeMi))} ${U.d}` : "rated range";
+    // Under the chart, as the car's Energy app does: the window's average and the range it projects.
+    $("chartSub").textContent = usable != null && wAvg > 50 ? `Avg ${Math.round(U.wh(wAvg))} ${U.e} over the last ${cfg.win} ${U.d} · projected ${fx(U.dist((usable * 1000) / wAvg))} ${U.d}` : "Rolling average against rated";
     renderGuide(usable, basis);
     app.hs = healthNow();
     renderGauge(live, tripAvg);
@@ -337,7 +343,7 @@
     const nowR = performance.now(), slow = live === true && nowR - (app.slowAt || 0) < 1000 && !app.forceSlow;
     if (!slow) {
       app.slowAt = nowR; app.forceSlow = false;
-      if (cfg.tab === "trip") renderBreakdown(t);
+      if (cfg.tab === "trip") { renderBreakdown(t); renderPark(); }
       if (cfg.tab === "battery") { renderPlan(usable); renderBricks(); }
       if (cfg.tab === "cockpit") renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh());
       if (cfg.tab === "health") renderHealth(cfg.health ? app.hs : burnPlan(null));
@@ -465,8 +471,9 @@
     const tot = eb ? EB.reduce((p, [k]) => p + Math.max(0, eb[k]), 0) : 0;
     if (!eb || tot < 0.02) { bar.innerHTML = ""; box.innerHTML = `<p class="note">${app.source === "tessie" ? "Needs the adapter: Tessie updates too slowly to split energy by use." : "Fills in as you drive."}</p>`; return; }
     bar.innerHTML = EB.map(([k, , c]) => `<i style="width:${(Math.max(0, eb[k]) / tot) * 100}%;background:${c}"></i>`).join("");
-    box.innerHTML = EB.map(([k, label, c]) => `<div><span><i class="dot" style="background:${c}"></i>${label}</span><span>${eb[k].toFixed(2)} kWh · ${Math.round((Math.max(0, eb[k]) / tot) * 100)}%</span></div>`).join("")
-      + `<div><span><i class="dot" style="background:var(--regen)"></i>Recovered by regen</span><span>${eb.regen.toFixed(2)} kWh${eb.accel > 0.05 ? ` · ${Math.round((eb.regen / eb.accel) * 100)}% of speed-up energy` : ""}</span></div>`;
+    const r = ratedWh(), range = kwh => (r ? ` · ${fx(U.dist((Math.max(0, kwh) * 1000) / r), 1)} ${U.d}` : "");   // range impact, as the car's Energy app shows it
+    box.innerHTML = EB.map(([k, label, c]) => `<div><span><i class="dot" style="background:${c}"></i>${label}</span><span>${eb[k].toFixed(2)} kWh · ${Math.round((Math.max(0, eb[k]) / tot) * 100)}%${range(eb[k])}</span></div>`).join("")
+      + `<div><span><i class="dot" style="background:var(--regen)"></i>Recovered by regen</span><span>${eb.regen.toFixed(2)} kWh${range(eb.regen)}${eb.accel > 0.05 ? ` · ${Math.round((eb.regen / eb.accel) * 100)}% of speed-up energy` : ""}</span></div>`;
   }
 
   function renderBricks() {
@@ -642,6 +649,49 @@
     if (s === 429) { notice("Tessie says too many requests. Slowing down for a minute.", "warn"); if (app.tessieTimer) { clearInterval(app.tessieTimer); app.tessieTimer = setTimeout(() => { app.tessieTimer = setInterval(() => { if (!document.hidden || healthOn()) pollTessie(); }, 15000); }, 60000); } return; }
     if (s === 0) { notice(e.message, "bad"); disconnect(); return; }
     notice(`Couldn't reach Tessie (${e && e.message ? e.message : "network"}). Retrying every 10 seconds.`, "warn");
+  }
+
+  /* ---------------- parked (Tessie's idle log) ----------------
+     Like the Park view of the car's Energy app: what each parked stretch used. Tessie logs these whether or not this
+     page was open. Read-only; fetched while the Trip tab shows, at most every 10 minutes (every minute after a failure). */
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const hm = ms => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+  async function loadPark() {
+    app.parkBusy = true;
+    try {
+      const vin = app.vin || cfg.tessieVin || ((await tget("vehicles?only_active=true")).results || [])[0]?.vin;
+      if (!vin) throw new Error("no car on this Tessie account");
+      const r = await tget(`${vin}/idles?from=${Math.floor(Date.now() / 1000) - 7 * 86400}&distance_format=mi`);
+      app.park = { at: Date.now(), list: (r.results || []).filter(d => d.ended_at > d.started_at).sort((a, b) => b.started_at - a.started_at) };
+    } catch (e) {
+      app.park = { at: Date.now(), err: e.status === 401 || e.status === 403 ? "Tessie rejected the token. Paste a fresh one in Setup." : `Couldn't reach Tessie (${e.message || "network"}). Trying again in a minute.` };
+    } finally { app.parkBusy = false; }
+  }
+  function renderPark() {
+    const tok = !!tessieToken(), p = app.park;
+    if (!tok) app.park = null;
+    else if (!app.parkBusy && (!p || Date.now() - p.at > (p.err ? 60000 : 600000))) loadPark();
+    const key = `${tok ? (app.park ? app.park.at : "wait") : "none"}${U.d}`;   // redraw only when the data or units change
+    if (app.parkKey === key) return; app.parkKey = key;
+    const blank = text => { $("pkLast").innerHTML = $("pkWeek").innerHTML = "—"; $("pkLastSub").textContent = $("pkWeekSub").textContent = ""; $("pkRows").innerHTML = ""; $("pkNote").textContent = text; };
+    if (!tok) return blank("Paste a Tessie token in Setup: Tessie logs every parked stretch, even with this page closed.");
+    if (!app.park) return blank("Reading Tessie's log…");
+    if (app.park.err) return blank(app.park.err);
+    const list = app.park.list;
+    if (!list.length) return blank("No parked stretches in Tessie's log for the last 7 days.");
+    const kwh = d => Math.max(0, +d.energy_used || 0), hrs = d => (d.ended_at - d.started_at) / 3600;
+    const tags = d => [d.sentry_fraction >= 0.05 && `Sentry ${Math.round(d.sentry_fraction * 100)}%`, d.climate_fraction >= 0.05 && `climate ${Math.round(d.climate_fraction * 100)}%`].filter(Boolean).join(" · ");
+    const last = list[0];
+    set("pkLast", fx(kwh(last), 2), "kWh");
+    $("pkLastSub").textContent = [hm(hrs(last) * 3600000), `${fx((kwh(last) * 1000) / hrs(last))} W`, tags(last)].filter(Boolean).join(" · ");
+    const sum = list.reduce((s, d) => s + kwh(d), 0), mi = list.reduce((s, d) => s + Math.max(0, +d.rated_range_used || 0), 0);
+    set("pkWeek", fx(sum, 1), "kWh");
+    $("pkWeekSub").textContent = `${fx(sum / 7, 1)} kWh a day · ${fx(U.dist(mi))} ${U.d} of range`;
+    $("pkRows").innerHTML = list.slice(0, 6).map(d => `<div><span>${fmtWhen(d.started_at * 1000)}${d.location ? ` · ${esc(String(d.location).split(",")[0])}` : ""}${tags(d) ? `<br><small class="sub">${tags(d)}</small>` : ""}</span><span>${fx(kwh(d), 2)} kWh · ${hm(hrs(d) * 3600000)}</span></div>`).join("");
+    // What Sentry costs this car: average draw over stretches with it on the whole time, against those with it off.
+    const avgW = g => { const h = g.reduce((s, d) => s + hrs(d), 0); return h > 0.5 ? (g.reduce((s, d) => s + kwh(d), 0) * 1000) / h : null; };
+    const on = avgW(list.filter(d => d.sentry_fraction >= 0.9)), off = avgW(list.filter(d => !(d.sentry_fraction > 0.1) && !(d.climate_fraction > 0.1)));
+    $("pkNote").textContent = on != null && off != null ? `With Sentry on, the car drew about ${Math.round(on)} W parked; with Sentry and climate off, ${Math.round(off)} W.` : "Sentry and climate show the share of the time each was on, as Tessie logs it.";
   }
 
   /* ---------------- max-range guidance ----------------
@@ -1328,7 +1378,7 @@
   /* ---------------- controls ---------------- */
   // Wrapped: passing connectCar directly would hand it the click event as its "auto" argument (the v21 bug:
   // a tap was treated as a silent background attempt, so the adapter picker never opened).
-  $("connectBtn").addEventListener("click", () => connectCar(false, false));
+  $("connectBtn").addEventListener("click", () => (inCar ? startTessie() : connectCar(false, false)));
   $("chooseBtn").addEventListener("click", () => connectCar(false, true));
   $("demoBtn").addEventListener("click", () => (app.source === "demo" ? disconnect() : startDemo()));
   $("disconnectBtn").addEventListener("click", disconnect);
@@ -1384,7 +1434,10 @@
   setInterval(tick, 250);
   syncSeg();
   status("off", "Not connected");
-  if (!window.ElmLink || !ElmLink.supported()) notice("Live car data needs Chrome 138+ on Android (or desktop Chrome) over https://. Demo works anywhere.", "info");
+  // On the car's screen Connect car means Tessie, and it starts on its own (asking for the token in Setup if there's none).
+  document.body.classList.toggle("car", inCar);
+  if (inCar) { $("connectBtn").querySelector("use")?.setAttribute("href", "#i-cloud"); startTessie(); }
+  else if (!window.ElmLink || !ElmLink.supported()) notice("Live car data needs Chrome 138+ on Android (or desktop Chrome) over https://. Demo works anywhere.", "info");
   // Service worker: check for a new version on every load and switch to it right away (one automatic reload).
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(() => {});

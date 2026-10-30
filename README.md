@@ -39,7 +39,7 @@ On later visits, Chrome remembers the adapter, so **Connect car** skips the choo
 Five tabs: on a phone they sit at the bottom of the screen, on a wider screen across the top (with charge and pack temperature beside them). The last one you used is remembered.
 
 - **Cockpit:** coaching tip, efficiency gauge, power flow, accelerator, mile by mile and the max-range guide.
-- **Trip:** this trip and where its energy went, the consumption chart, drive history and your speed curve.
+- **Trip:** this trip and where its energy went (with the range each part cost), the consumption chart (with the window's average and projected range above it), drive history, your speed curve, and **Parked** (below).
 - **Battery:** charge and pack readings (including the regen limit and rated range), the charge plan, and a heatmap of all 108 bricks.
 - **Health:** prep for the car's battery health test: use the charge down to a target on an out-and-back drive.
 - **Setup:** adapter and screen options, alerts, units, Tessie, backup, CSV recording and diagnostics.
@@ -150,6 +150,23 @@ Tap **Start Tessie** (Setup tab) to run the same screen from Tessie's cloud inst
 - Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter.
 - Tessie mode keeps its own trip, separate from the adapter's.
 - More than one car on the Tessie account: pick it under **Setup → Tessie car** (remembered).
+
+## Parked (Trip tab, needs a Tessie token)
+
+Like the Park view of the car's own Energy app: what the car used while it sat. It reads Tessie's log of parked stretches (`/idles`), which Tessie keeps whether or not this page was open, so it works with the adapter too; Tessie doesn't have to be started. Read-only; fetched while the Trip tab shows, at most every 10 minutes.
+
+- **Latest stretch:** kWh, how long, the average draw in watts, and the share of the time Sentry and climate were on.
+- **Last 7 days:** total kWh, per day, and the rated range it cost; then the last six stretches with time and place.
+- When the log has stretches with Sentry on the whole time and others with Sentry and climate off, the note compares the car's average draw for each: what Sentry costs this car.
+
+## On the car's touchscreen
+
+Open the same address in the car's browser. It has no Web Serial or Bluetooth, so the adapter can't connect there; the screen runs from Tessie instead (about every 10 s). The browser is recognized by its `Tesla/` user agent; add `?car` to the address to try that layout anywhere.
+
+- Tessie starts on its own when the page opens. The first time, it opens Setup for the token (the car's browser keeps its own storage, separate from the phone's). **Connect car** then means Tessie.
+- Hidden there, since they need the adapter: the accelerator card, where the energy went, drives, the speed curve, the brick heatmap, and the adapter settings.
+- Buttons and tabs get bigger touch targets.
+- Not yet checked on a real car: whether this firmware's browser runs the page (it needs a recent Chromium) and whether it stays usable while driving.
 
 ## Auto-connect (v21)
 

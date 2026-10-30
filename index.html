@@ -333,6 +333,9 @@ body.drive .overlay .sheet{font-size:16px}
   body.drive .gnum{font-size:52px} body.drive .tip{font-size:17px} body.drive .gval{font-size:13px}
   body.drive .pscale, body.drive .fticks, body.drive .goalform{display:none!important}
 }
+/* Car touchscreen (the Tesla browser): Tessie only, so the adapter-only parts go; bigger touch targets at arm's length */
+body.car .needs-adapter{display:none!important}
+body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44px;min-width:60px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -434,7 +437,7 @@ body.drive .overlay .sheet{font-size:16px}
       </section>
 
       <div class="stack c5">
-        <section class="card pedal" aria-label="Accelerator">
+        <section class="card pedal needs-adapter" aria-label="Accelerator">
           <div class="prow"><span class="eyebrow">Accelerator</span><span class="pzone" id="pedalZone"></span><span class="pnum" id="pedalPct">—</span><span class="brake" id="brakePill" data-on="false">Brake</span></div>
           <div class="ptrack" aria-hidden="true"><div class="pgreen"></div><div class="pfill" id="pedalFill"></div></div>
           <div class="pscale" aria-hidden="true"><span style="left:15%">15</span><span style="left:40%">40%</span></div>
@@ -493,17 +496,17 @@ body.drive .overlay .sheet{font-size:16px}
           <div><span><i class="dot" style="background:var(--regen)"></i>Recovered by regen</span><span id="tRegen">—</span></div>
           <div><span>Added by charging</span><span id="tChg">—</span></div>
         </div>
-        <div class="sect">
+        <div class="sect needs-adapter">
           <div class="label">Where the energy went</div>
           <div class="split" id="ebBar" style="height:14px"></div>
           <div class="rows" id="ebRows"></div>
-          <p class="note">Speeding up = power above what holding that speed costs while accelerating. Climate = heat-pump compressor.</p>
+          <p class="note">Speeding up = power above what holding that speed costs while accelerating. Climate = heat-pump compressor. Distance = the rated range that energy is worth.</p>
         </div>
       </section>
 
       <section class="card c6" aria-label="Consumption chart">
         <div class="ttl">
-          <div><h2>Consumption by distance</h2><p>Rolling average against rated</p></div>
+          <div><h2>Consumption by distance</h2><p id="chartSub">Rolling average against rated</p></div>
           <div class="seg" role="group" aria-label="Chart window">
             <button type="button" data-w="5">5 <span data-u="d">mi</span></button><button type="button" data-w="15">15 <span data-u="d">mi</span></button><button type="button" data-w="30">30 <span data-u="d">mi</span></button>
           </div>
@@ -512,16 +515,26 @@ body.drive .overlay .sheet{font-size:16px}
         <div class="legend"><span><b></b><span id="legendAvg">Rolling 1-mile average (Wh/mi)</span></span><span><b class="r"></b>Rated consumption</span></div>
       </section>
 
-      <section class="card c6" aria-label="Drives">
+      <section class="card c6 needs-adapter" aria-label="Drives">
         <div class="ttl"><div><h2>Drives</h2><p>Scored when you park, kept on this phone</p></div></div>
         <div id="driveTrend"></div>
         <div id="driveList" class="dlist"></div>
       </section>
 
-      <section class="card c6" aria-label="Speed vs consumption">
+      <section class="card c6 needs-adapter" aria-label="Speed vs consumption">
         <div class="ttl"><div><h2>Your speed vs <span data-u="e">Wh/mi</span></h2><p id="tempBand"></p></div></div>
         <div id="speedTable"></div>
         <p class="note">Learned from your steady cruising, split by outside temperature. The amber point and row is your most efficient band; the outlined row is your speed now. <button class="linkbtn" id="resetSpeed" type="button">Reset</button></p>
+      </section>
+
+      <section class="card c6" aria-label="Parked">
+        <div class="ttl"><div><h2>Parked</h2><p>What the car used while it sat, from Tessie's log</p></div></div>
+        <div class="tiles">
+          <div class="tile"><div class="label">Latest stretch</div><div class="v" id="pkLast">—</div><div class="sub" id="pkLastSub"></div></div>
+          <div class="tile"><div class="label">Last 7 days</div><div class="v" id="pkWeek">—</div><div class="sub" id="pkWeekSub"></div></div>
+        </div>
+        <div class="rows" id="pkRows" style="margin-top:12px"></div>
+        <p class="note" id="pkNote"></p>
       </section>
     </div>
   </section>
@@ -553,7 +566,7 @@ body.drive .overlay .sheet{font-size:16px}
         <div class="rows" id="planRows" style="margin-top:14px"></div>
       </section>
 
-      <section class="card c12" aria-label="Brick voltages">
+      <section class="card c12 needs-adapter" aria-label="Brick voltages">
         <div class="ttl"><div><h2>Bricks</h2><p id="bCount">0/108 reported</p></div></div>
         <div class="tiles">
           <div class="tile"><div class="label" id="bMinLbl">Lowest</div><div class="v" id="bMin">—</div></div>
@@ -604,16 +617,16 @@ body.drive .overlay .sheet{font-size:16px}
       <section class="card c6" aria-label="Adapter and screen">
         <div class="ttl"><div><h2>Adapter &amp; screen</h2><p>The adapter only listens; nothing is sent to the car.</p></div></div>
         <div class="cfg">
-          <label class="check" for="cfgAuto"><input id="cfgAuto" type="checkbox"> Auto-connect to the adapter when it's in range</label>
+          <label class="check needs-adapter" for="cfgAuto"><input id="cfgAuto" type="checkbox"> Auto-connect to the adapter when it's in range</label>
           <label class="check" for="cfgAwake"><input id="cfgAwake" type="checkbox"> Keep screen on while connected</label>
           <label for="cfgAlerts">Eyes-free alerts<select class="field" id="cfgAlerts"><option value="off">Off</option><option value="vibrate">Vibrate</option><option value="sound">Sound</option><option value="both">Vibrate + sound</option></select></label>
           <div style="display:flex;align-items:end"><button class="btn" id="alertTest" type="button">Test alert</button></div>
-          <label for="cfgBrick">Watch brick #<input class="field" id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
-          <label for="cfgBase">Brick numbering<select class="field" id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
+          <label class="needs-adapter" for="cfgBrick">Watch brick #<input class="field" id="cfgBrick" type="number" min="0" max="108" inputmode="numeric"></label>
+          <label class="needs-adapter" for="cfgBase">Brick numbering<select class="field" id="cfgBase"><option value="1">1–108 (Scan My Tesla style)</option><option value="0">0–107 (DBC style)</option></select></label>
           <label for="cfgUnits">Units<select class="field" id="cfgUnits"><option value="mi">Miles (mph, Wh/mi, °F)</option><option value="km">Kilometers (km/h, Wh/km, °C)</option></select></label>
         </div>
-        <div class="btnrow" style="margin-top:14px"><button class="btn" id="chooseBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button></div>
-        <p class="note">Picks a different Bluetooth adapter. Chrome then forgets the others, so auto-connect can't open the wrong one.</p>
+        <div class="btnrow needs-adapter" style="margin-top:14px"><button class="btn" id="chooseBtn" type="button"><svg class="ic" aria-hidden="true"><use href="#i-bluetooth-searching"/></svg>Choose adapter</button></div>
+        <p class="note needs-adapter">Picks a different Bluetooth adapter. Chrome then forgets the others, so auto-connect can't open the wrong one.</p>
       </section>
 
       <section class="card c6" aria-label="Tessie">
@@ -654,15 +667,15 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v33</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v34</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=33"></script>
-<script src="elm.js?v=33"></script>
-<script src="sim.js?v=33"></script>
-<script src="units.js?v=33"></script>
-<script src="coach.js?v=33"></script>
-<script src="drives.js?v=33"></script>
-<script src="stops.js?v=33"></script>
-<script src="app.js?v=33"></script>
+<script src="decode.js?v=34"></script>
+<script src="elm.js?v=34"></script>
+<script src="sim.js?v=34"></script>
+<script src="units.js?v=34"></script>
+<script src="coach.js?v=34"></script>
+<script src="drives.js?v=34"></script>
+<script src="stops.js?v=34"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
