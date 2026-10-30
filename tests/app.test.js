@@ -73,20 +73,24 @@ function fakeSerial(...ports) {
   return { ports, getPorts: async () => ports.filter(p => !p.forgotten), requestPort: async () => ports[ports.length - 1], addEventListener() {} };
 }
 
-// car: readings a test can change between polls. Commands (POSTs) are recorded in cmds and always succeed.
+// car: readings a test can change between polls. Commands (POSTs) are recorded in cmds; one named in refuse gets
+// { result: false, reason } back, the rest succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [], cmds = [], car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false };
+  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, outside: 25, setC: 21, climateOn: false };
   const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
-    if (opts.method === "POST") { cmds.push(url.replace("https://api.tessie.com/", "")); return { ok: true, status: 200, json: async () => ({ result: true }) }; }
+    if (opts.method === "POST") {
+      cmds.push(url.replace("https://api.tessie.com/", "")); const why = refuse[url.split("/command/")[1].split("?")[0]];
+      return { ok: true, status: 200, json: async () => (why ? { result: false, reason: why } : { result: true }) };
+    }
     const body = /vehicles/.test(url) ? { results: cars }
       : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, nominal_full_pack_energy: 75, battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
       : { state: "online", drive_state: { power: 0, speed: 0 }, vehicle_state: { odometer: car.odometer }, charge_state: {},
           climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
     return { ok: true, status: 200, json: async () => body };
   };
-  return { fetch, calls, cmds, car };
+  return { fetch, calls, cmds, car, refuse };
 }
 
 // Screen wake lock: counts the locks still held.
@@ -214,20 +218,26 @@ const test = async (name, fn) => {
 
   await test("backup: export leaves out the Tessie token; import keeps only clean data, then reloads", async () => {
     const drive = { t0: 7, t1: 8, mi: 5, kwh: 1.2, wh: 240, heavy: 1, friction: 0, regenKWh: 0.1, parkKWh: 0, accelKWh: 0.2, cruiseKWh: 0.9, stops: 2, maxMph: 40 };
-    const app = boot({ storage: { "de.tessie.v1": "secret-token", "de.drives.v1": [drive], "de.trip.v1": carTrip } });
+    const app = boot({ storage: { "de.tessie.v1": "secret-token", "de.drives.v1": [drive], "de.trip.v1": carTrip,
+      "de.cfg.v1": { alerts: "both", brick: 12, tab: "trip", goal: { mi: 20, at: 1 } } } });
     app.click("exportBtn"); await wait(50);
     const text = await app.files[0].text(), out = JSON.parse(text);
     assert.ok(!text.includes("secret-token"), "token exported");
     assert.strictEqual(out.drives.length, 1); assert.strictEqual(out.trip.drive, 3.1);
+    assert.strictEqual(out.settings.alerts, "both"); assert.strictEqual(out.settings.brick, 12);
+    assert.ok(!("tab" in out.settings) && !("goal" in out.settings), "per-outing state left out");
 
     const evil = { app: "drive-energy", drives: [{ ...drive, habit: { tone: "good", text: "<img src=x onerror=alert(1)>" } }, { t0: "x" }],
-      speed: { "55|60-79": { kwh: 2, mi: 8 }, "<b>|x": { kwh: 1, mi: 1 }, "60|x": { kwh: "1", mi: 1 } }, trip: { ...carTrip, drive: "3" } };
+      speed: { "55|60-79": { kwh: 2, mi: 8 }, "<b>|x": { kwh: 1, mi: 1 }, "60|x": { kwh: "1", mi: 1 } }, trip: { ...carTrip, drive: "3" },
+      settings: { alerts: "loud", brick: 50, win: 7, plan: { mi: 30, res: 20, x: "<b>" }, health: { target: 20 } } };
     app.el("importFile").on.change({ target: { files: [{ text: async () => JSON.stringify(evil) }], value: "" } }); await wait(50);
     const drives = JSON.parse(app.store.get("de.drives.v1")), speed = JSON.parse(app.store.get("de.speed.v1"));
     assert.strictEqual(drives.length, 1); assert.ok(!/</.test(drives[0].habit.text));
     assert.deepStrictEqual(Object.keys(speed), ["55|60-79"]);
     assert.strictEqual(app.store.get("de.trip.v1"), "null", "malformed trip dropped");
     assert.strictEqual(app.store.get("de.tessie.v1"), "secret-token", "token untouched");
+    const c = JSON.parse(app.store.get("de.cfg.v1"));
+    assert.deepStrictEqual([c.alerts, c.brick, c.win, c.plan, c.health], ["both", 50, 15, { mi: 30, res: 20 }, undefined], "only valid settings imported");
     assert.strictEqual(app.reloads(), 1);
     app.el("importFile").on.change({ target: { files: [{ text: async () => "not json" }], value: "" } }); await wait(50);
     assert.strictEqual(app.reloads(), 1); assert.strictEqual(app.el("notice").dataset.tone, "bad");
@@ -316,12 +326,17 @@ const test = async (name, fn) => {
     app.click("hStart"); assert.deepStrictEqual([cfg().health.target, cfg().health.odo0, cfg().health.phase], [20, 10000, "out"]);
     app.click("burnFull"); await wait(200);
     assert.deepStrictEqual(tes.cmds, ["VIN1/command/start_climate", "VIN1/command/set_temperatures?temperature=15"], "warm out: AC at LO");
-    // 10 mi out on 2.5 kWh (250 Wh/mi), at 62%: 31.5 kWh left above 20% = 126 mi; turn around in (126 − 10) / 2 = 58 mi.
+    // 10 mi out on 2.5 kWh (250 Wh/mi). Tessie just stepped down to 62%, so the charge is taken as 62.5%:
+    // 31.875 kWh above 20% = 127.5 mi; turn around in (127.5 − 10) / 2 = 58.75 mi.
     await step(() => Object.assign(tes.car, { odometer: 10010, energy: 47.5, level: 62 }));
-    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 58.0 mi."); assert.ok(/58\.0 mi/.test(app.html("hRows")));
-    // 70 mi out at 30%: 7.5 kWh = 30 mi left, less than the 70 back: time to head home.
+    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 58.8 mi."); assert.ok(/58\.8 mi/.test(app.html("hRows")));
+    // Still 62% on Tessie, but 0.5 kWh more used: the countdown follows energy remaining instead of waiting for 61%.
+    // 61.83% → 31.375 kWh = 125.5 mi; (125.5 − 12) / 2 = 56.75.
+    await step(() => Object.assign(tes.car, { odometer: 10012, energy: 47 }));
+    assert.strictEqual(app.text("tip"), "62% → 20% · turn around in 56.8 mi.");
+    // 70 mi out, just stepped to 30% (taken as 30.5%): 7.875 kWh = 31.5 mi left, less than the 70 back: head home.
     await step(() => Object.assign(tes.car, { odometer: 10070, energy: 32.5, level: 30 }));
-    assert.strictEqual(cfg().health.phase, "back"); assert.strictEqual(app.text("tip"), "Head home · 30.0 mi of driving left until 20%.");
+    assert.strictEqual(cfg().health.phase, "back"); assert.strictEqual(app.text("tip"), "Head home · 31.5 mi of driving left until 20%.");
     await step(() => Object.assign(tes.car, { odometer: 10100, energy: 25, level: 20 }));
     assert.strictEqual(cfg().health.phase, "done"); assert.strictEqual(app.text("tip"), "At 20%: ready for the battery health test.");
     assert.deepStrictEqual(tes.cmds.slice(2), ["VIN1/command/set_temperatures?temperature=21", "VIN1/command/stop_climate"], "only what it switched on, temperature put back");
@@ -340,6 +355,40 @@ const test = async (name, fn) => {
     assert.deepStrictEqual(tes.cmds.slice(5).map(c => c.slice(13)), ["stop_steering_wheel_heater", "set_seat_heat?seat=front_left&level=0",
       "set_seat_heat?seat=front_right&level=0", "set_temperatures?temperature=20", "stop_climate"]);
     assert.ok(/off again/.test(app.text("burnMsg")));
+    app.stop();
+  });
+
+  await test("health test prep: a refused command is named and stops the sequence; Turn off undoes the rest", async () => {
+    const tes = fakeTessie(); Object.assign(tes.car, { outside: 2, setC: 20 }); tes.refuse.set_seat_heat = "user_present";
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "health" } }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300);
+    app.click("hStart"); app.click("burnFull"); await wait(200);
+    assert.deepStrictEqual(tes.cmds.map(c => c.slice(13)), ["start_climate", "set_temperatures?temperature=28", "set_seat_heat?seat=front_left&level=3"]);
+    assert.strictEqual(app.text("burnMsg"), "Driver seat heater didn't work: user_present.");
+    app.click("burnOff"); await wait(200);
+    assert.deepStrictEqual(tes.cmds.slice(3).map(c => c.slice(13)), ["set_temperatures?temperature=20", "stop_climate"]);
+    app.el("diag").open = true; app.el("diag").on.toggle();
+    assert.ok(/set_seat_heat\?seat=front_left&level=3  failed: user_present/.test(app.text("diagText")), "command log in diagnostics");
+    app.stop();
+  });
+
+  await test("health test prep clears itself after a day and switches off the climate it turned on", async () => {
+    const tes = fakeTessie(), at = Date.now() - 2 * 864e5;
+    const health = { target: 20, at, odo0: 10000, e0: 50, phase: "out", burn: { did: ["climate"], prevC: 21, wasOn: false, cold: false } };
+    const app = boot({ storage: { "de.tessie.v1": "tok", "de.cfg.v1": { tab: "health", health } }, fetch: tes.fetch, scale: 20 });
+    await wait(300);
+    assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).health, null); assert.deepStrictEqual(tes.cmds, ["VIN1/command/stop_climate"]);
+    app.stop();
+  });
+
+  await test("Tessie keeps polling with the screen off only while a health test prep runs", async () => {
+    const tes = fakeTessie();
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300);
+    app.document.hidden = true; let n = tes.calls.length; await wait(1200);
+    assert.strictEqual(tes.calls.length, n, "no polling with the screen off normally");
+    app.click("hStart"); n = tes.calls.length; await wait(1200);
+    assert.ok(tes.calls.length > n, "polling continues during the prep");
     app.stop();
   });
 

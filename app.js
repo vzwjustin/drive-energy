@@ -2,12 +2,15 @@
    → CanDecode → trip math → screen. Demo mode feeds the same path from CanSim. */
 (() => {
   "use strict";
-  // Show script errors on screen instead of failing silently, so they can be reported.
-  window.addEventListener("error", e => {
+  // Show script errors on screen instead of failing silently, so they can be reported. Background (promise) failures
+  // too: every expected one is caught where it happens, so one that gets this far is a bug.
+  const broke = what => {
     const n = document.getElementById("notice"); if (!n) return;
     n.hidden = false; n.dataset.tone = "bad";
-    document.getElementById("noticeText").textContent = `Something broke: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno}). Reload; if it stays, report this message with Copy diagnostics (Setup tab).`;
-  });
+    document.getElementById("noticeText").textContent = `Something broke: ${what}. Reload; if it stays, report this message with Copy diagnostics (Setup tab).`;
+  };
+  window.addEventListener("error", e => broke(`${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno})`));
+  window.addEventListener("unhandledrejection", e => broke(e.reason && e.reason.message ? e.reason.message : String(e.reason)));
   const $ = id => document.getElementById(id);
   const D = window.CanDecode;
   const LISTEN = Object.values(D.IDS);
@@ -378,7 +381,7 @@
         : h.phase === "done" ? `At ${h.target}%: ready for the battery health test.`
         : h.phase === "back" ? `Head home · ${fx(s.left, 1)} mi of driving left until ${h.target}%.`
         : s.turnIn <= 0.2 ? "Turn around now and head home."
-        : `${Math.round(s.soc)}% → ${h.target}% · turn around in ${fx(s.turnIn, 1)} mi.`;
+        : `${Math.round(s.raw)}% → ${h.target}% · turn around in ${fx(s.turnIn, 1)} mi.`;
       tip.textContent = text; tip.dataset.tone = h.phase === "done" ? "good" : "warn";
       tip2.textContent = s && p > 0.3 && h.phase !== "done" ? `Using ${fx(p, 1)} kW · about ${Math.round(p / s.k)}% an hour${h.burn && h.burn.did.length ? " · climate boosted" : ""}` : "";
       const kind = `health.${h.phase}.${s && s.turnIn <= 0.2 ? 1 : 0}`;
@@ -529,6 +532,7 @@
      so pack volts/amps and energy update every few seconds while it's awake. The token stays in this
      phone's storage only; it's never in the page's code. use_cache=true never wakes the car. */
   const tessieToken = () => { try { return localStorage.getItem(KEY.tok) || ""; } catch (e) { return ""; } };
+  const within = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`no answer in ${ms / 1000} s`)), ms))]);
   async function tget(path) {
     const r = await fetch(`https://api.tessie.com/${path}`, { headers: { Authorization: `Bearer ${tessieToken()}` }, cache: "no-store" });
     if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
@@ -544,8 +548,9 @@
     resetDecoder();
     app.source = "tessie"; app.trip = load(KEY.tripT, null); app.tessieAt = null; app.vin = null;
     status("connecting", "Reaching Tessie"); notice(null);
-    // Poll from the start (finding the car first) so a failed first request is retried too.
-    app.tessieTimer = setInterval(() => { if (!document.hidden) pollTessie(); }, 10000);
+    // Poll from the start (finding the car first) so a failed first request is retried too. While a health test prep
+    // runs, keep polling with the screen off (Chrome may slow it to once a minute) so climate still switches off at the target.
+    app.tessieTimer = setInterval(() => { if (!document.hidden || healthOn()) pollTessie(); }, 10000);
     await pollTessie();
   }
   function stopTessie() {
@@ -578,6 +583,7 @@
 
       app.carState = st.state; app.tessieAt = (bat.timestamp ? bat.timestamp * (bat.timestamp < 1e12 ? 1000 : 1) : Date.now());
       app.frames++; app.lastFrameAt = performance.now();
+      if (app.lastFrameAt - app.lastTick > 1100) tick();     // timers stalled (screen off): update now, as adapter frames do
       if (!$("notice").hidden && $("notice").dataset.tone !== "bad") notice(null);
     } catch (e) { tessieError(e); }
     finally { app.tessieBusy = false; }
@@ -594,8 +600,9 @@
   });
   function tessieError(e) {
     const s = e && e.status;
+    app.tessieErr = `${new Date().toLocaleTimeString()} ${e && e.message ? e.message : "network"}`;
     if (s === 401 || s === 403) { notice("Tessie rejected the token. Paste a fresh one in Setup (Tessie app → Settings → API).", "bad"); disconnect(); return; }
-    if (s === 429) { notice("Tessie says too many requests. Slowing down for a minute.", "warn"); if (app.tessieTimer) { clearInterval(app.tessieTimer); app.tessieTimer = setTimeout(() => { app.tessieTimer = setInterval(() => { if (!document.hidden) pollTessie(); }, 15000); }, 60000); } return; }
+    if (s === 429) { notice("Tessie says too many requests. Slowing down for a minute.", "warn"); if (app.tessieTimer) { clearInterval(app.tessieTimer); app.tessieTimer = setTimeout(() => { app.tessieTimer = setInterval(() => { if (!document.hidden || healthOn()) pollTessie(); }, 15000); }, 60000); } return; }
     if (s === 0) { notice(e.message, "bad"); disconnect(); return; }
     notice(`Couldn't reach Tessie (${e && e.message ? e.message : "network"}). Retrying every 10 seconds.`, "warn");
   }
@@ -687,15 +694,24 @@
      commands are ever sent, and Turn off undoes only what the app switched on. */
   const kwhPerPct = () => (L.fullPackKWh > 10 ? (L.fullPackKWh - (L.bufferKWh ?? 0)) / 100 : null);
   const healthOn = () => !!cfg.health && cfg.health.phase !== "done";
+  // Tessie reports whole percents. Between steps, follow energy remaining (0.01 kWh) so the countdown moves smoothly:
+  // just after a step down the charge is at the top of the new percent, and it can't go below the bottom of it.
+  function fineSoc() {
+    const soc = L.socUI ?? L.uiSOC, e = L.energyRemainingKWh, k = kwhPerPct();
+    if (app.source !== "tessie" || soc == null || e == null || !k) return soc;
+    let a = app.socAnchor;
+    if (!a || a.soc !== soc) a = app.socAnchor = { soc, e, top: a && soc < a.soc ? soc + 0.5 : soc };
+    return Math.min(soc + 0.5, Math.max(soc - 0.5, a.top - (a.e - e) / k));
+  }
   function burnPlan(h) {                                  // h: the running prep, or null to plan from here
-    const soc = L.socUI ?? L.uiSOC, k = kwhPerPct(), target = h ? h.target : cfg.healthTarget || 20;
+    const raw = L.socUI ?? L.uiSOC, soc = fineSoc(), k = kwhPerPct(), target = h ? h.target : cfg.healthTarget || 20;
     if (soc == null || !k) return null;
     const out = h && h.odo0 != null && L.odoMi != null ? Math.max(0, L.odoMi - h.odo0) : 0;
     const used = h && h.e0 != null && L.energyRemainingKWh != null ? h.e0 - L.energyRemainingKWh : 0;
     const own = out >= 2 && used > 0, p = planWh(), wh = own ? (used * 1000) / out : p.wh;   // this drive's own Wh/mi after 2 mi
     if (!wh) return null;
     const above = Math.max(0, (soc - target) * k), left = (above * 1000) / wh;
-    return { soc, k, target, out, wh, basis: own ? "this drive" : p.basis, above, left, turnIn: (left - out) / 2 };
+    return { soc, raw, k, target, out, wh, basis: own ? "this drive" : p.basis, above, left, turnIn: (left - out) / 2 };
   }
   // Runs with every screen update while a prep is on: fills in the start readings, then calls the turn-around and the target.
   function healthNow() {
@@ -705,7 +721,7 @@
     if (h.odo0 == null && L.odoMi != null) { h.odo0 = L.odoMi; store(KEY.cfg, cfg); }
     if (h.e0 == null && L.energyRemainingKWh != null) { h.e0 = L.energyRemainingKWh; store(KEY.cfg, cfg); }
     const s = burnPlan(h); if (!s) return null;
-    if (h.phase !== "done" && s.soc <= h.target) { h.phase = "done"; store(KEY.cfg, cfg); fireAlert("turn"); burnOff(); }
+    if (h.phase !== "done" && s.raw <= h.target) { h.phase = "done"; store(KEY.cfg, cfg); fireAlert("turn"); burnOff(); }
     else if (h.phase === "out" && s.out > 0.5 && s.turnIn <= 0) { h.phase = "back"; store(KEY.cfg, cfg); fireAlert("turn"); }
     return s;
   }
@@ -724,8 +740,8 @@
     if (!s) { box.innerHTML = `<p class="note">${app.source ? "Waiting for the charge level and the full-pack reading…" : "Needs the charge level: connect the adapter or start Tessie."}</p>`; return; }
     const p = app.pEma, using = p > 0.3 ? `<div><span>Using now</span><span>${fx(p, 1)} kW · about ${Math.round(p / s.k)}% an hour</span></div>` : "";
     if (!h) {
-      box.innerHTML = s.soc <= s.target ? `<div><span>Now at ${Math.round(s.soc)}%</span><span>already at ${s.target}% or below</span></div>` : `
-        <div><span>Now at ${Math.round(s.soc)}%</span><span>${Math.round(s.soc - s.target)}% to use · ${s.above.toFixed(1)} kWh</span></div>
+      box.innerHTML = s.raw <= s.target ? `<div><span>Now at ${Math.round(s.raw)}%</span><span>already at ${s.target}% or below</span></div>` : `
+        <div><span>Now at ${Math.round(s.raw)}%</span><span>${Math.round(s.raw - s.target)}% to use · ${s.above.toFixed(1)} kWh</span></div>
         <div><span>Round trip</span><span>~${Math.round(s.left)} mi at ${Math.round(s.wh)} Wh/mi</span></div>
         <div><span>Drive out</span><span class="planbig">~${Math.round(s.left / 2)} mi</span></div>
         <p class="note" style="margin:6px 0 0">Then turn around and head home. Based on ${s.basis}; after 2 mi it uses this drive's own Wh/mi, so climate on full or a faster road brings the turn-around point closer.</p>`;
@@ -735,7 +751,7 @@
       : h.phase === "back" ? `<div><span>Heading home</span><span class="planbig">${fx(s.left, 1)} mi to ${h.target}%</span></div>`
       : `<div><span>Turn around in</span><span class="planbig">${s.turnIn <= 0.2 ? "now" : `${fx(s.turnIn, 1)} mi`}</span></div>`;
     box.innerHTML = `${head}
-      <div><span>Now at</span><span>${fx(s.soc, 1)}% → ${h.target}% · ${s.above.toFixed(1)} kWh to use</span></div>
+      <div><span>Now at</span><span>${fx(s.raw, 1)}% → ${h.target}% · ${s.above.toFixed(1)} kWh to use</span></div>
       <div><span>Driven since start</span><span>${fx(s.out, 1)} mi at ${Math.round(s.wh)} Wh/mi${s.basis === "this drive" ? "" : " (planned)"}</span></div>
       ${h.phase === "done" ? "" : using}
       ${h.phase === "done" ? `<p class="note" style="margin:6px 0 0">The charge is down to ${h.target}%: ready for the battery health test.</p>` : ""}`;
@@ -745,17 +761,24 @@
   async function tessieCar() {
     if (app.vin) return app.vin;
     if (!app.cmdVin) {
-      const list = (await tget("vehicles?only_active=true")).results || [];
+      const list = (await within(tget("vehicles?only_active=true"), 45000)).results || [];
       const v = list.find(x => x.vin === cfg.tessieVin) || list[0];
       if (!v) throw new Error("no vehicles on this Tessie account");
       app.cmdVin = v.vin;
     }
     return app.cmdVin;
   }
+  // Tessie waits for the car to wake before it answers; give up after 45 s rather than leave the buttons stuck.
+  // The last 20 commands and replies go into Copy diagnostics.
   async function tcmd(name, q) {
-    const r = await fetch(`https://api.tessie.com/${await tessieCar()}/command/${name}${q ? `?${q}` : ""}`, { method: "POST", headers: { Authorization: `Bearer ${tessieToken()}` } });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.result !== true) throw new Error(j.reason || j.error || (r.ok ? "the car didn't accept it" : `HTTP ${r.status}`));
+    const line = `${name}${q ? `?${q}` : ""}`;
+    const log = msg => { (app.cmdLog ||= []).push(`${new Date().toLocaleTimeString()}  ${line}  ${msg}`); if (app.cmdLog.length > 20) app.cmdLog.shift(); };
+    try {
+      const r = await within(fetch(`https://api.tessie.com/${await tessieCar()}/command/${line}`, { method: "POST", headers: { Authorization: `Bearer ${tessieToken()}` } }), 45000);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.result !== true) throw new Error(j.reason || j.error || (r.ok ? "the car didn't accept it" : `HTTP ${r.status}`));
+      log("ok");
+    } catch (e) { log(`failed: ${e.message}`); throw e; }
   }
   const burnMsg = (text, tone) => { $("burnMsg").textContent = text; $("burnMsg").dataset.tone = tone || ""; };
   // full: climate flat out (AC at LO when it's warm out; HI plus seat and wheel heaters when it's cold).
@@ -769,7 +792,7 @@
     app.burnBusy = true; app.forceSlow = true;
     try {
       if (!("prevC" in b)) {                                // what to put back afterwards
-        const cl = (await tget(`${await tessieCar()}/state?use_cache=true`)).climate_state || {};
+        const cl = (await within(tget(`${await tessieCar()}/state?use_cache=true`), 45000)).climate_state || {};
         b.prevC = cl.driver_temp_setting ?? null; b.wasOn = !!cl.is_climate_on; b.cold = (cl.outside_temp ?? L.outsideC ?? 20) < 15;
         store(KEY.cfg, cfg);
       }
@@ -1108,6 +1131,8 @@
     lines.push(`Drive Energy diagnostics · ${new Date().toISOString()}`);
     lines.push(`Source: ${app.source || "none"} · adapter: ${app.link ? app.link.chip : "—"} · mode: ${app.link ? app.link.mode : "—"}${app.link && app.link.mode === "elm" ? ` · ATCRA wildcards: ${app.link.useCra ? "yes" : "no (ATCF/ATCM)"}` : ""}`);
     lines.push(`Frames total: ${app.frames} · now ${app.fps}/s · BUFFER FULL: ${app.bufferFull} · 0x352 format: ${dec.meta.fmt352 || "undetected"}`);
+    if (tessieToken()) lines.push(`Tessie: car …${String(app.vin || app.cmdVin || "not looked up").slice(-6)} · ${app.carState || "state unknown"} · last reading ${app.tessieAt ? age(Date.now() - app.tessieAt) : "none"} · last error ${app.tessieErr || "none"}`);
+    if (cfg.health) lines.push(`Health test prep: ${JSON.stringify(cfg.health)}`);
     lines.push("", "ID    frames  decoded  last seen   what");
     for (const id of LISTEN) {
       const s = app.idStats[id];
@@ -1118,6 +1143,7 @@
     lines.push("", "Decoded now:", JSON.stringify({ ...L, bricks: `${L.bricks.filter(v => v != null).length}/108` }, (k, v) => (typeof v === "number" ? +v.toFixed(3) : v)));
     lines.push("", "Adapter commands:", ...((app.link && app.link.log) || ["—"]));
     lines.push("", "Other adapter output:", ...(app.rawLines.length ? app.rawLines : ["—"]));
+    lines.push("", "Tessie commands:", ...(app.cmdLog && app.cmdLog.length ? app.cmdLog : ["—"]));
     return lines.join("\n");
   }
   setInterval(() => { const d = $("diag"); if (d && d.open) $("diagText").textContent = diagText(); }, 1000);
@@ -1187,10 +1213,18 @@
      Drives, the speed table and trips live only in this browser's storage. Ask Chrome to keep it (otherwise it may clear
      it when space runs low), and let it be saved to a file and restored. The Tessie token is never exported. */
   navigator.storage?.persist?.().catch(() => {});
+  // Settings go along too, but not per-outing state (range goal, health test prep, current tab). The file is untrusted,
+  // so each setting is checked before it's used.
+  const SETTINGS = {
+    win: v => [5, 15, 30].includes(v), brick: v => Number.isInteger(v) && v >= 0 && v <= 108, oneBased: v => typeof v === "boolean",
+    keepAwake: v => typeof v === "boolean", autoConnect: v => typeof v === "boolean", alerts: v => ["off", "vibrate", "sound", "both"].includes(v),
+    healthTarget: v => [10, 15, 20, 25, 30].includes(v), plan: v => !!v && Number.isInteger(v.mi) && v.mi >= 1 && v.mi <= 400 && [10, 15, 20, 30].includes(v.res),
+  };
   $("exportBtn").addEventListener("click", () => {
     saveTrip();
     const data = { app: "drive-energy", version: 1, exported: new Date().toISOString(),
-      drives: load(KEY.drives, []), speed: load(KEY.speed, {}), trip: load(KEY.trip, null), tessieTrip: load(KEY.tripT, null) };
+      drives: load(KEY.drives, []), speed: load(KEY.speed, {}), trip: load(KEY.trip, null), tessieTrip: load(KEY.tripT, null),
+      settings: Object.fromEntries(Object.keys(SETTINGS).filter(k => cfg[k] != null).map(k => [k, cfg[k]])) };
     saveFile(`drive-energy-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), "application/json");
   });
   confirmTap($("importBtn"), "Tap again: replaces this phone's drives", () => $("importFile").click());
@@ -1216,6 +1250,10 @@
       if (/^\d{1,3}(\|(x|<40|40-59|60-79|80\+))?$/.test(k) && v && finite(v.kwh) && finite(v.mi) && v.mi >= 0) speed[k] = { kwh: v.kwh, mi: v.mi };
     if (app.source) await disconnect();                     // so nothing running saves over the import before the reload
     store(KEY.drives, list); store(KEY.speed, speed); store(KEY.trip, cleanTrip(o.trip)); store(KEY.tripT, cleanTrip(o.tessieTrip));
+    const set = o.settings && typeof o.settings === "object" ? o.settings : {};
+    for (const [k, ok] of Object.entries(SETTINGS)) if (ok(set[k])) cfg[k] = k === "plan" ? { mi: set.plan.mi, res: set.plan.res } : set[k];
+    const lo = cfg.oneBased ? 1 : 0; cfg.brick = Math.min(lo + 107, Math.max(lo, cfg.brick));     // inside the numbering's range
+    store(KEY.cfg, cfg);
     location.reload();
   });
 

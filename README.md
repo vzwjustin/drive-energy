@@ -73,7 +73,7 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 Gets the charge down to a target (20% by default) on an out-and-back drive from home, so you arrive home ready for the car's battery health test.
 
 - **Plan:** from your current charge, the kWh to use and the round-trip miles at your usual Wh/mi (same basis as the charge plan), so you know how far to drive out.
-- **Start from home**, then drive. After 2 mi the app uses this drive's own Wh/mi.
+- **Start from home**, then drive. After 2 mi the app uses this drive's own Wh/mi. Tessie reports whole percents, so between steps the countdown follows the remaining kWh.
   - On the way out, the Cockpit coach shows "66% → 20% · turn around in 12.4 mi". It's time to turn when what's left above the target only just covers the drive back on the same road.
   - Then "Head home · 18.0 mi of driving left until 20%". This doesn't need to know which way you're driving, so turning late just means arriving a little lower.
   - At the target: "At 20%: ready for the battery health test".
@@ -83,7 +83,9 @@ Gets the charge down to a target (20% by default) on an out-and-back drive from 
   - **Climate on full:** AC at LO when it's warm out; HI plus both front seat heaters and the steering wheel heater when it's cold.
   - **Max defrost:** heater and AC together with the fan maxed.
   - **Finish parked:** Camp mode, if you get home above the target.
-- Only climate commands are sent. At the target, on Stop, or when the prep clears itself after a day, the app switches off only what it switched on, climate last, and puts the cabin temperature back. It can only do that while the page is open. If the car refuses a command, the card names it and the reason.
+- Only climate commands are sent. At the target, on Stop, or when the prep clears itself after a day, the app switches off only what it switched on, climate last, and puts the cabin temperature back. It can only do that while the page is open. While a prep runs, Tessie is checked even with the screen off. Chrome may slow that to once a minute, so the target is still caught within about a minute.
+  - If the car refuses a command, the card names it and the reason, and nothing after it is sent. A command with no answer after 45 s counts as failed.
+  - **Copy diagnostics** lists the last 20 commands and the car's replies.
 - Assumes the way back costs about what the way out did. On a route that's mostly downhill going out, you'll arrive a little under the target.
 - Demo never sends commands, and a prep tried in Demo is dropped once real data arrives.
 
@@ -198,7 +200,7 @@ Rows are also saved on the phone as you go, so if the page reloads or Android cl
 
 ## Backup
 
-Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Setup → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. The Tessie token is never included.
+Drives, the learned speed table and trips are stored in Chrome on this phone only. The app asks Chrome not to clear that storage, and **Setup → Export backup** saves it to a file. **Import backup** (tap twice) restores a backup on this or another phone, then reloads. Settings are included: watched brick, alerts, charge plan, health-prep target, keep-awake and auto-connect. The range goal, an ongoing health prep and the Tessie token are not.
 
 ## Verify on your car (first drive checklist)
 
@@ -227,7 +229,7 @@ Drives, the learned speed table and trips are stored in Chrome on this phone onl
 - `decode.js`: CAN signal decoders (usable in Node)
 - `coach.js`: pedal/brake efficiency coach and speed-band learning
 - `sim.js`: demo frame generator (the **Demo** button)
-- `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-maskable.svg`: offline install. The service worker fetches fresh files first but serves the saved copy if the network hangs for 3 s.
+- `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-maskable.svg`: offline install. The service worker fetches fresh files first but serves the saved copy if the network hangs for 3 s or answers with an error.
 - `tests/`: run with `npm test` (`app.test.js` boots `app.js` on a stub page against a fake adapter and a fake Tessie). GitHub Actions runs them on every push.
 - `tools/bump.js`: `npm run bump` raises the version in `sw.js` and `index.html` for a release
 

@@ -12,7 +12,7 @@
 <!-- crossorigin: a CORS reply the service worker can keep, so the fonts also load offline -->
 <link rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap">
 <style>
-/* OLED cockpit: four tabs (Cockpit / Trip / Battery / Setup), tabs on top on wide screens and docked at the bottom on phones.
+/* OLED cockpit: five tabs (Cockpit / Trip / Battery / Health / Setup), tabs on top on wide screens and docked at the bottom on phones.
    Emerald = regen and good, cyan = pedal and the watched brick, amber = energy and caution, rose = waste. Dark-first for night driving. */
 :root{
   --bg:#07090e; --surface:#111622; --inset:#0b0f18; --raised:#192030; --line:#1e293b; --line2:#2a3649;
@@ -647,14 +647,14 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v30</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v31</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=30"></script>
-<script src="elm.js?v=30"></script>
-<script src="sim.js?v=30"></script>
-<script src="coach.js?v=30"></script>
-<script src="drives.js?v=30"></script>
-<script src="stops.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="decode.js?v=31"></script>
+<script src="elm.js?v=31"></script>
+<script src="sim.js?v=31"></script>
+<script src="coach.js?v=31"></script>
+<script src="drives.js?v=31"></script>
+<script src="stops.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

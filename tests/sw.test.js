@@ -31,6 +31,13 @@ async function get(url) {
   assert.ok(!cached.some(u => u.includes("api.tessie.com")), "Tessie reply was cached");
   console.log("ok - Tessie API replies are never cached or replayed");
 
+  // GitHub Pages answering 404 or 5xx (mid-deploy): the saved copy, not the error page.
+  ctx.fetch = async () => ({ ok: false, status: 404 }); ctx.caches.match = async () => "saved copy";
+  let res404 = null;
+  on.fetch({ request: { url: "https://me.github.io/drive-energy/app.js?v=30", method: "GET", mode: "cors" }, respondWith: p => (res404 = p), waitUntil() {} });
+  assert.strictEqual(await res404, "saved copy");
+  console.log("ok - an error reply falls back to the saved copy");
+
   // One bar of signal: the request hangs, so the saved copy is served after 3 s instead of waiting it out.
   ctx.fetch = () => new Promise(() => {}); ctx.caches.match = async () => "saved copy";
   let res = null; const t0 = Date.now();

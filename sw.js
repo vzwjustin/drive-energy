@@ -1,6 +1,6 @@
 // Offline shell: the screen keeps working in the car with no signal once it has loaded once.
 // Network first (up to 3 s), bypassing the browser's HTTP cache, so a new page never runs with an old script.
-const CACHE = "drive-energy-v30";
+const CACHE = "drive-energy-v31";
 const SHELL = ["./", "index.html", "app.js", "decode.js", "elm.js", "sim.js", "coach.js", "drives.js", "stops.js", "manifest.webmanifest", "icon.svg", "icon-maskable.svg"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -14,9 +14,9 @@ self.addEventListener("fetch", e => {
   const fresh = net.then(r => { if (!r.ok) return r; const copy = r.clone(); return caches.open(CACHE).then(c => c.put(req, copy)).then(() => r, () => r); });
   const saved = () => caches.match(req, { ignoreSearch: true });
   // A weak signal (a garage, one bar) mustn't stall the page: after 3 s serve the saved copy, and let the download
-  // finish in the background so the next load gets it.
+  // finish in the background so the next load gets it. An error reply (a 404 or 5xx mid-deploy) gets the saved copy too.
   e.waitUntil(fresh.catch(() => {}));
   e.respondWith(Promise.race([fresh, new Promise(res => setTimeout(res, 3000))])
-    .then(r => r || saved().then(c => c || fresh))
+    .then(r => (r && r.ok ? r : saved().then(c => c || r || fresh)))
     .catch(saved));
 });
