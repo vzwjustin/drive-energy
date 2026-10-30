@@ -168,6 +168,7 @@ h1{font:700 16px/1.2 var(--f-ui);letter-spacing:-.01em;margin:0}
 .ffill.fr{left:0;right:calc(100% - var(--z,28%));transform-origin:right;transform:scaleX(0);border-radius:6px 0 0 6px;background:var(--regen)}
 .ffill.fu[data-tone="ok"]{background:var(--info)} .ffill.fu[data-tone="way"]{background:var(--bad)} .ffill.fr[data-tone="hard"]{background:var(--warn)}
 .fzero{position:absolute;top:-2px;bottom:-2px;left:var(--z,28%);width:2px;margin-left:-1px;background:var(--fg)}
+.flimit{position:absolute;top:0;bottom:0;width:0;margin-left:-1px;border-left:2px dashed var(--warn)}
 .fticks{position:relative;height:16px;font:500 10.5px var(--f-num);color:var(--faint)}
 .fticks span{position:absolute;top:3px;transform:translateX(-50%)}
 
@@ -260,6 +261,7 @@ select.field{font-family:var(--f-ui)}
 .battery .pct{position:absolute;inset:0;display:grid;place-items:center;font:700 19px var(--f-num)}
 .bgrid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:5px;margin-top:16px}
 @media (min-width:640px){.bgrid{grid-template-columns:repeat(18,minmax(0,1fr))}}
+.bgrid .bk{cursor:pointer}
 .bk{height:26px;border-radius:6px;display:grid;place-items:center;font:500 10px var(--f-num);color:var(--fg);
   background:color-mix(in srgb,var(--regen) var(--a,20%),transparent);border:1px solid color-mix(in srgb,var(--regen) 25%,transparent)}
 .bk[data-tone="warn"]{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent);border-color:color-mix(in srgb,var(--warn) 50%,transparent)}
@@ -417,15 +419,15 @@ body.drive .overlay .sheet{font-size:16px}
             <div class="kpi"><div class="label">Trip score</div><div class="v" id="effScore">—</div><div class="sub" id="effScoreSub">this trip</div></div>
             <div class="kpi"><div class="label">Range at this pace</div><div class="v" id="proj">—</div><div class="sub" id="projSub">—</div></div>
             <div class="kpi"><div class="label" id="avgLabel">Avg · last 15 mi</div><div class="v" id="avg">—</div><div class="sub" id="avgSub">builds as you drive</div></div>
-            <div class="kpi"><div class="label">Power</div><div class="v" id="pw">—</div><div class="sub" id="pwSub">waiting for pack data</div></div>
+            <div class="kpi"><div class="label">Charge</div><div class="v" id="kSoc">—</div><div class="sub" id="kSocSub">waiting for the car</div></div>
           </div>
         </div>
         <div class="flow" aria-label="Power flow: regen to the left, power used to the right">
-          <div class="frow"><span class="fside regen">◀ Regen</span><span class="fstate" id="flowState">—</span><span class="fside use">Power ▶</span></div>
+          <div class="frow"><span class="fside regen" id="fRegenLbl">◀ Regen</span><span class="fstate" id="flowState">—</span><span class="fside use">Power ▶</span></div>
           <div class="ftrack" id="fTrack">
             <div class="fzone fzr" id="fZoneR" hidden></div><div class="fzone fzu" id="fZoneU" hidden></div>
             <div class="ffill fr" id="fRegen"></div><div class="ffill fu" id="fUse"></div>
-            <div class="fzero"></div>
+            <div class="fzero"></div><div class="flimit" id="fLimit" title="Regen limit" hidden></div>
           </div>
           <div class="fticks" id="fTicks"></div>
         </div>
@@ -537,6 +539,8 @@ body.drive .overlay .sheet{font-size:16px}
           <div class="tile"><div class="label">Pack volts</div><div class="v" id="pv">—</div></div>
           <div class="tile"><div class="label">Current</div><div class="v" id="pa">—</div></div>
           <div class="tile"><div class="label">Pack temp</div><div class="v" id="pt">—</div></div>
+          <div class="tile"><div class="label">Regen limit</div><div class="v" id="bRegen">—</div></div>
+          <div class="tile"><div class="label">Rated range</div><div class="v" id="bRange">—</div></div>
         </div>
       </section>
 
@@ -554,12 +558,14 @@ body.drive .overlay .sheet{font-size:16px}
         <div class="tiles">
           <div class="tile"><div class="label" id="bMinLbl">Lowest</div><div class="v" id="bMin">—</div></div>
           <div class="tile"><div class="label" id="bMaxLbl">Highest</div><div class="v" id="bMax">—</div></div>
-          <div class="tile"><div class="label">Spread</div><div class="v" id="bSpread">—</div></div>
+          <div class="tile"><div class="label">Spread</div><div class="v" id="bSpread">—</div><div class="sub" id="bSpreadSub"></div></div>
           <div class="tile watch"><div class="label" id="bWatchLbl">Brick 38</div><div class="v" id="bWatch">—</div></div>
           <div class="tile"><div class="label">Gap</div><div class="v" id="bGap">—</div></div>
+          <div class="tile"><div class="label">Under load</div><div class="v" id="bSag">—</div><div class="sub" id="bSagSub"></div></div>
         </div>
-        <div class="bgrid" id="bricks" role="img" aria-label="Voltage of all 108 bricks, watched brick outlined"></div>
-        <p class="note">Brighter = higher voltage within today's spread. Amber is 5+ mV and red 20+ mV under the pack's middle brick. The outlined brick is the one you watch (Setup).</p>
+        <div class="bgrid" id="bricks" aria-label="Voltage of all 108 bricks, watched brick outlined"></div>
+        <p class="note">Brighter = higher voltage within today's spread. Amber is 5+ mV and red 20+ mV under the pack's middle brick. The outlined brick is the one you watch: tap any brick to watch it. While driving, bricks are read a few at a time as the current changes, so judge balance by the parked spread.</p>
+        <p class="note">Under load: how many mV more the watched brick sags per 100 A than the two bricks read alongside it. Healthy neighbors match within a few mV; amber from 5, red from 15.</p>
       </section>
     </div>
   </section>
@@ -648,15 +654,15 @@ body.drive .overlay .sheet{font-size:16px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v32</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v33</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=32"></script>
-<script src="elm.js?v=32"></script>
-<script src="sim.js?v=32"></script>
-<script src="units.js?v=32"></script>
-<script src="coach.js?v=32"></script>
-<script src="drives.js?v=32"></script>
-<script src="stops.js?v=32"></script>
-<script src="app.js?v=32"></script>
+<script src="decode.js?v=33"></script>
+<script src="elm.js?v=33"></script>
+<script src="sim.js?v=33"></script>
+<script src="units.js?v=33"></script>
+<script src="coach.js?v=33"></script>
+<script src="drives.js?v=33"></script>
+<script src="stops.js?v=33"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>

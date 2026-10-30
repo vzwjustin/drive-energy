@@ -1,6 +1,6 @@
 // Offline shell: the screen keeps working in the car with no signal once it has loaded once.
 // Network first (up to 3 s), bypassing the browser's HTTP cache, so a new page never runs with an old script.
-const CACHE = "drive-energy-v32";
+const CACHE = "drive-energy-v33";
 const SHELL = ["./", "index.html", "app.js", "decode.js", "elm.js", "sim.js", "units.js", "coach.js", "drives.js", "stops.js", "manifest.webmanifest", "icon.svg", "icon-maskable.svg"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

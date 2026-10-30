@@ -464,6 +464,29 @@ const test = async (name, fn) => {
     } finally { Units.set("mi"); }
   });
 
+  await test("Cockpit: the Charge tile shows the charge and kWh left (power stays on the flow bar)", async () => {
+    const tes = fakeTessie();
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); await wait(300);
+    assert.strictEqual(app.html("kSoc"), "66<small>%</small>"); assert.strictEqual(app.text("kSocSub"), "50.0 kWh left");
+    tes.car.level = 15; await wait(700);
+    assert.strictEqual(app.el("kSoc").dataset.tone, "warn");
+    app.stop();
+  });
+
+  await test("Pack & bricks: the watched brick's sag is measured against its frame-mates; tap a brick to watch it", async () => {
+    const app = boot({ storage: { "de.cfg.v1": { tab: "battery", brick: 38, oneBased: true } }, scale: 20 });
+    app.click("demoBtn"); await wait(3000);
+    const sag = parseFloat(app.html("bSag"));
+    assert.ok(sag > 4.5 && sag < 7.5, app.html("bSag"));         // the demo's brick 38 sags 6 mV more per 100 A
+    assert.strictEqual(app.text("bSagSub"), "per 100 A vs bricks 37 & 39"); assert.strictEqual(app.el("bSag").dataset.tone, "warn");
+    assert.strictEqual(app.html("bRegen"), "62<small>kW</small>");
+    app.el("bricks").on.click({ target: { closest: () => ({ dataset: { i: "10" } }) } });
+    assert.strictEqual(JSON.parse(app.store.get("de.cfg.v1")).brick, 11); assert.strictEqual(app.text("bWatchLbl"), "Brick 11");
+    assert.strictEqual(app.html("bSag"), "—", "a newly watched brick is measured afresh");
+    app.stop();
+  });
+
   console.log(`\n${pass} passed${fail ? `, ${fail} failed` : ""}`);
   process.exit(fail ? 1 : 0);                             // exit explicitly: the fake adapters' streams are still ticking
 })().catch(e => { console.error(e); process.exit(1); });

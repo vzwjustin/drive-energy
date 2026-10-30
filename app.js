@@ -56,6 +56,7 @@
       const r = dec.decode(f.id, f.bytes); app.frames++; app.lastFrameAt = performance.now();
       const s = (app.idStats[f.id] ||= { n: 0, ok: 0, last: 0, sample: "" });
       s.n++; if (r) s.ok++; s.last = app.lastFrameAt; s.sample = line.replace(/\s+/g, "");
+      if (r === "bricks") sagSample(f.bytes[0]);
       // With another app in front Chrome may run timers once a minute; frames keep arriving, so let them drive the update.
       if (app.lastFrameAt - app.lastTick > 1100) tick();
       return;
@@ -193,7 +194,7 @@
     if (app.source === "demo") { app.trip = app.savedTrip ?? load(KEY.trip, null); app.source = null; notice(null); }
     app.coach = realCoach;
   }
-  function resetDecoder() { drives.cancel(); stops.reset(); app.climateKWh = 0; app.liveAt = 0; dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
+  function resetDecoder() { drives.cancel(); stops.reset(); app.sag = null; app.restSpread = null; app.restSec = 0; app.climateKWh = 0; app.liveAt = 0; dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
 
   /* ---------------- trip + consumption math ----------------
      Energy: lifetime counters on 0x3D2 (kWh out minus kWh in) — exact to 1 Wh, regen included.
@@ -237,6 +238,10 @@
     // Health test prep pace, for its time estimates: average speed over the last few minutes, stops included.
     if (!healthOn()) app.pace = null;
     else if (live && L.speedMph != null) app.pace = app.pace == null ? (L.speedMph > 3 ? L.speedMph : null) : app.pace + (L.speedMph - app.pace) * Math.min(1, dtSim / 180);
+    // Brick spread after 10 s parked with almost no current: the balance figure. Under load the bricks are read a few
+    // at a time while the current changes, so the live spread mixes moments.
+    app.restSec = live && L.packA != null && Math.abs(L.packA) < 5 && (L.speedMph ?? 0) < 0.5 ? (app.restSec || 0) + dtSim : 0;
+    if (app.restSec > 10) { const have = L.bricks.filter(v => v != null); if (have.length >= 100) app.restSpread = (Math.max(...have) - Math.min(...have)) * 1000; }
     if (live && (app.source === "car" || app.source === "demo")) {
       checkAlerts(now);
       const sd = stops.update({ mph: L.speedMph, kw: app.pEma, brake: L.brakeOn, pedal: L.pedalPct }, dtSim);
@@ -289,10 +294,11 @@
   const set = (id, v, unit) => { $(id).innerHTML = v === "—" ? "—" : `${v}${unit ? `<small>${unit}</small>` : ""}`; };
   let lastChart = 0;
   function render(live) {
-    const t = app.trip, p = app.pEma, mph = L.speedMph;
-    // power
-    set("pw", fx(p, Math.abs(p ?? 0) < 10 ? 1 : 0), "kW");
-    $("pwSub").textContent = p == null ? "waiting for pack data" : p < -0.2 ? (mph > 1 ? "regenerating" : "charging") : mph > 1 ? "driving" : "parked draw";
+    const t = app.trip, soc = L.socUI ?? L.uiSOC;
+    const packT = L.packTminC != null ? `${fx(U.temp(L.packTminC))}–${fx(U.temp(L.packTmaxC))}` : null;
+    // charge (power is on the flow bar below it)
+    set("kSoc", fx(soc), "%"); $("kSoc").dataset.tone = soc == null ? "" : soc < 10 ? "bad" : soc < 20 ? "warn" : "";
+    $("kSocSub").textContent = [L.energyRemainingKWh != null && `${fx(L.energyRemainingKWh, 1)} kWh left`, packT && `pack ${packT}${U.t}`].filter(Boolean).join(" · ") || "waiting for the car";
     // consumption
     const tripMi = t ? t.lastOdo - t.odo0 : 0, tripAvg = t && tripMi > 0.3 ? (t.drive * 1000) / tripMi : null;
     const wAvg = windowAvg(t, U.toMi(cfg.win));
@@ -309,13 +315,13 @@
     renderGauge(live, tripAvg);
     renderScore(tripMi, tripAvg);
     // battery
-    const soc = L.socUI ?? L.uiSOC;
     $("battFill").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`; $("battPct").textContent = soc != null ? `${fx(soc, 1)}%` : "—";
     set("eRem", fx(L.energyRemainingKWh, 1), "kWh"); set("eFull", fx(L.fullPackKWh, 1), "kWh");
     set("eBuf", fx(L.bufferKWh, 1), "kWh"); set("pv", fx(L.packV, 1), "V"); set("pa", fx(L.packA, 1), "A");
-    $("pt").innerHTML = L.packTminC != null ? `${fx(U.temp(L.packTminC))}–${fx(U.temp(L.packTmaxC))}<small>${U.t}</small>` : "—";
+    $("pt").innerHTML = packT ? `${packT}<small>${U.t}</small>` : "—";
+    set("bRegen", fx(L.maxRegenKW), "kW"); set("bRange", fx(U.dist(L.ratedRangeMi)), U.d);
     $("topSoc").textContent = soc != null ? `${fx(soc)}%` : "—";
-    $("topTemp").textContent = L.packTminC != null ? `${fx(U.temp(L.packTminC))}–${fx(U.temp(L.packTmaxC))}${U.t}` : "—";
+    $("topTemp").textContent = packT ? `${packT}${U.t}` : "—";
     // trip
     set("tMi", fx(U.dist(tripMi), 1), U.d); set("tAvg", fx(U.wh(tripAvg)), U.e);
     const tot = t ? t.drive + t.park : 0;
@@ -468,18 +474,45 @@
     const idx = cfg.oneBased ? cfg.brick - 1 : cfg.brick;
     $("bWatchLbl").textContent = `Brick ${cfg.brick}`;
     $("bMinLbl").textContent = "Lowest"; $("bMaxLbl").textContent = "Highest";
-    if (have.length < 20) { ["bMin", "bMax", "bSpread", "bWatch", "bGap"].forEach(id => ($(id).innerHTML = "—")); $("bCount").textContent = app.source === "tessie" ? "needs the adapter (not in Tessie)" : `${have.length}/108 reported`; drawBricks(null, idx); return; }
+    if (have.length < 20) { ["bMin", "bMax", "bSpread", "bWatch", "bGap", "bSag"].forEach(id => ($(id).innerHTML = "—")); $("bSpreadSub").textContent = $("bSagSub").textContent = ""; $("bCount").textContent = app.source === "tessie" ? "needs the adapter (not in Tessie)" : `${have.length}/108 reported`; drawBricks(null, idx); return; }
     const min = Math.min(...have), max = Math.max(...have), base = cfg.oneBased ? 1 : 0;
     set("bMin", fx(min, 3), "V"); set("bMax", fx(max, 3), "V"); set("bSpread", fx((max - min) * 1000), "mV");
+    $("bSpreadSub").textContent = app.restSpread != null ? `parked: ${fx(app.restSpread)} mV` : "parked: not yet";
     $("bMinLbl").textContent = `Lowest · #${b.indexOf(min) + base}`; $("bMaxLbl").textContent = `Highest · #${b.indexOf(max) + base}`;
     const w = b[idx];
     set("bWatch", w != null ? fx(w, 3) : "—", w != null ? "V" : "");
     const others = b.filter((v, i) => v != null && i !== idx), lowOther = others.length ? Math.min(...others) : null;
     const gap = w != null && lowOther != null ? (w - lowOther) * 1000 : null;
-    $("bGap").innerHTML = gap == null ? "—" : `${gap > 0 ? "+" : ""}${fx(gap)}<small>mV</small>`;
+    $("bGap").innerHTML = gap == null ? "—" : `${Math.round(gap) > 0 ? "+" : ""}${Math.round(gap)}<small>mV</small>`;   // never "-0"
     $("bGap").dataset.tone = gap != null && gap < -20 ? "bad" : gap != null && gap < -5 ? "warn" : "";
     $("bCount").textContent = `${have.length}/108 reported · gap is vs the lowest of the others`;
+    renderSag(idx, base);
     drawBricks(b, idx);
+  }
+
+  // Watched brick under load. The two bricks reported in the same frame were read at the same moment, at the same pack
+  // current, so the slope of the watched brick's difference from them against current is its extra resistance:
+  // how many mV more it sags per 100 A. Measured fresh each session, from the adapter's frames.
+  function sagSample(mux) {
+    const idx = cfg.oneBased ? cfg.brick - 1 : cfg.brick, b = L.bricks, a = L.packA;
+    if (mux !== Math.floor(idx / 3) || a == null) return;
+    const mates = [0, 1, 2].map(k => mux * 3 + k).filter(i => i !== idx);
+    if (b[idx] == null || mates.some(i => b[i] == null)) return;
+    let s = app.sag; if (!s || s.idx !== idx) s = app.sag = { idx, mates, n: 0, x: 0, y: 0, xx: 0, xy: 0, lo: a, hi: a };
+    const g = (b[idx] - (b[mates[0]] + b[mates[1]]) / 2) * 1000;
+    s.n++; s.x += a; s.y += g; s.xx += a * a; s.xy += a * g; s.lo = Math.min(s.lo, a); s.hi = Math.max(s.hi, a);
+  }
+  function renderSag(idx, base) {
+    const s = app.sag && app.sag.idx === idx ? app.sag : null, el = $("bSag");
+    if (!s || s.n < 20 || s.hi - s.lo < 100) {
+      el.innerHTML = "—"; el.dataset.tone = "";
+      $("bSagSub").textContent = app.source === "tessie" ? "needs the adapter" : "accelerate firmly once to measure";
+      return;
+    }
+    const sag = (-(s.n * s.xy - s.x * s.y) / (s.n * s.xx - s.x * s.x)) * 100;   // mV per 100 A, + = sags more
+    el.innerHTML = `${sag >= 0 ? "+" : "−"}${fx(Math.abs(sag), 1)}<small>mV</small>`;
+    el.dataset.tone = sag >= 15 ? "bad" : sag >= 5 ? "warn" : "";
+    $("bSagSub").textContent = `per 100 A vs bricks ${s.mates[0] + base} & ${s.mates[1] + base}`;
   }
 
   // Heatmap of all 108 bricks: brighter = higher within today's spread; amber/red = 5/20 mV under the median brick.
@@ -488,9 +521,9 @@
     const base = cfg.oneBased ? 1 : 0;
     $("bricks").innerHTML = Array.from({ length: 108 }, (_, i) => {
       const v = b && b[i], n = i + base, w = i === idx ? " w" : "";
-      if (v == null) return `<span class="bk none${w}" title="Brick ${n}: no reading">${n}</span>`;
+      if (v == null) return `<span class="bk none${w}" data-i="${i}" title="Brick ${n}: no reading">${n}</span>`;
       const under = (med - v) * 1000, a = Math.round(8 + (max > min ? (v - min) / (max - min) : 1) * 32);
-      return `<span class="bk${w}" data-tone="${under > 20 ? "bad" : under > 5 ? "warn" : ""}" style="--a:${a}%" title="Brick ${n}: ${v.toFixed(3)} V">${n}</span>`;
+      return `<span class="bk${w}" data-i="${i}" data-tone="${under > 20 ? "bad" : under > 5 ? "warn" : ""}" style="--a:${a}%" title="Brick ${n}: ${v.toFixed(3)} V">${n}</span>`;
     }).join("");
   }
 
@@ -1001,6 +1034,10 @@
       zu.style.left = `${FZ}%`; zu.style.width = `${fPos(tg.upKW, up, dn) - FZ}%`;
       const l = fPos(-tg.regenGentle, up, dn); zr.style.left = `${l}%`; zr.style.width = `${FZ - l}%`;
     }
+    // The car's regen limit (lower when the pack is cold or nearly full), when it's inside the bar's scale.
+    const lim = L.maxRegenKW > 1 && L.maxRegenKW < dn ? Math.round(L.maxRegenKW) : null, fl = $("fLimit");
+    fl.hidden = lim == null; if (lim != null) fl.style.left = `${fPos(-lim, up, dn)}%`;
+    const rl = lim == null ? "◀ Regen" : `◀ Regen · max ${lim} kW`; if ($("fRegenLbl").textContent !== rl) $("fRegenLbl").textContent = rl;
     const useTone = !moving ? "" : v <= tg.upKW ? "ok" : v <= tg.upKW * 1.8 ? "" : "way", hard = moving && -v > tg.regenGentle;
     $("fUse").dataset.tone = useTone; $("fRegen").dataset.tone = hard ? "hard" : "";
     const kw = `${Math.abs(v) < 10 ? Math.abs(v).toFixed(1) : Math.round(Math.abs(v))} kW`;
@@ -1314,6 +1351,10 @@
   $("dlBtn").addEventListener("click", download);
   document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { cfg.win = +b.dataset.w; store(KEY.cfg, cfg); syncSeg(); lastChart = 0; }));
   function syncSeg() { document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.w === cfg.win))); }
+  $("bricks").addEventListener("click", e => {                // tap a brick in the heatmap to watch it
+    const t = e.target.closest && e.target.closest("[data-i]"); if (!t) return;
+    cfg.brick = +t.dataset.i + (cfg.oneBased ? 1 : 0); store(KEY.cfg, cfg); $("cfgBrick").value = cfg.brick; app.forceSlow = true; render(!!app.source);
+  });
   $("cfgBrick").value = cfg.brick; $("cfgBase").value = cfg.oneBased ? "1" : "0"; $("cfgAwake").checked = cfg.keepAwake;
   $("cfgBrick").addEventListener("change", e => { const n = Math.round(+e.target.value); const lo = cfg.oneBased ? 1 : 0; if (n >= lo && n <= lo + 107) { cfg.brick = n; store(KEY.cfg, cfg); } else e.target.value = cfg.brick; });
   // Keep the brick number inside the new numbering's range (108 isn't a brick in 0–107, 0 isn't one in 1–108).

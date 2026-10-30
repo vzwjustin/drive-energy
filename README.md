@@ -40,7 +40,7 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 
 - **Cockpit:** coaching tip, efficiency gauge, power flow, accelerator, mile by mile and the max-range guide.
 - **Trip:** this trip and where its energy went, the consumption chart, drive history and your speed curve.
-- **Battery:** charge and pack readings, the charge plan, and a heatmap of all 108 bricks.
+- **Battery:** charge and pack readings (including the regen limit and rated range), the charge plan, and a heatmap of all 108 bricks.
 - **Health:** prep for the car's battery health test: use the charge down to a target on an out-and-back drive.
 - **Setup:** adapter and screen options, alerts, units, Tessie, backup, CSV recording and diagnostics.
 
@@ -55,8 +55,9 @@ Five tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 - **Trip score (0–100, first tile):** the same score drive summaries use.
   - 70% is consumption vs rated: 100 at 15% or more under rated Wh/mi, 0 at 50% or more over.
   - 30% is the share of pedal time spent in the 15–40% range.
-- **Tiles:** trip score, range at this pace, average over the last 5/15/30 mi, and power.
+- **Tiles:** trip score, range at this pace, average over the last 5/15/30 mi, and charge: % with kWh left and pack temperature. The charge tile is also how Drive view shows the charge.
 - **Power flow bar:** regen to the left of zero, power used to the right, with green "efficient" zones on both sides. The label states it in words, for example "12 kW · efficient" or "35 kW regen · strong, lift earlier".
+  - When the car limits regen (cold or nearly full pack), a dashed amber line marks the limit and the label reads "Regen · max 25 kW".
 
 ## Range tools (v16–v20)
 
@@ -193,7 +194,9 @@ How each number is worked out:
 - **Avg · last N mi:** energy over distance from the lifetime counters, across the last 5, 15 or 30 miles of the trip.
 - **Projected range:** (remaining − buffer) ÷ the average above. If there's no driving data yet, it falls back to rated range.
 - **Trip** splits energy into driving, parked (odometer not moving), regen recovered and charging added. It saves to the phone and survives reconnects until you tap **Reset trip** (twice, to confirm).
-- **Bricks:** lowest, highest, spread, a watched brick (default **38**) and its gap to the lowest of the other 107. The gap turns amber below −5 mV and red below −20 mV. The heatmap shades each brick by voltage within the current spread and marks bricks 5+ mV (amber) or 20+ mV (red) under the middle brick.
+- **Bricks:** lowest, highest, spread, a watched brick (default **38**) and its gap to the lowest of the other 107. The gap turns amber below −5 mV and red below −20 mV. The heatmap shades each brick by voltage within the current spread and marks bricks 5+ mV (amber) or 20+ mV (red) under the middle brick. Tap a brick to watch it.
+  - **Spread, parked:** the spread after 10 s parked with almost no current. While driving, bricks are read a few at a time as the current changes, so the live spread mixes moments; the parked figure is the one that shows balance.
+  - **Under load:** how many mV more the watched brick sags per 100 A than the two bricks reported in the same CAN frame. Those three are read at the same moment and the same current, so the difference is the watched brick's extra resistance. It needs one firm acceleration (current spanning 100 A) and starts fresh each session or when you watch another brick. Healthy neighbors match within a few mV; it turns amber from +5 and red from +15.
 
 ## Record CSV
 

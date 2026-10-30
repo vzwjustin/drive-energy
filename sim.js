@@ -10,6 +10,7 @@
   function createSim() {
     const s = { t: 0, mph: 0, odoKm: 19000, outKWh: 9100, inKWh: 6400, full: 55.0, rem: 41.0, tick: 0, mux352: 0, mux401: 0 };
     const bricks = Array.from({ length: 108 }, () => 3.305 + (Math.random() - 0.5) * 0.004);
+    const ohm = i => (i === 37 ? 0.00046 : 0.0004);       // brick 38 sags 6 mV more per 100 A than the rest
 
     function targetSpeed(t) {            // 0–40 s parked, then a loop of town + highway
       const c = t % 900;
@@ -34,7 +35,7 @@
       if (kwh >= 0) s.outKWh += kwh; else s.inKWh += -kwh;
       s.rem = Math.max(0, s.rem - kwh);
       s.odoKm += (s.mph * 1.609344 * dt) / 3600;
-      bricks.forEach((x, i) => { bricks[i] = x - kwh / s.full * 0.12 + (Math.random() - 0.5) * 0.0002 ; });
+      bricks.forEach((x, i) => { bricks[i] = x - kwh / s.full * 0.12; });
       const soc = (s.rem / s.full) * 100;
       const out = [];
 
@@ -63,7 +64,7 @@
       }
       for (let k = 0; k < 2; k++) {
         b = frame(8); b[0] = s.mux401;
-        for (let j = 0; j < 3; j++) setBits(b, 16 + 16 * j, 16, (bricks[s.mux401 * 3 + j] - amps * 0.0004) / 0.0001);
+        for (let j = 0; j < 3; j++) setBits(b, 16 + 16 * j, 16, (bricks[s.mux401 * 3 + j] - amps * ohm(s.mux401 * 3 + j) + (Math.random() - 0.5) * 0.0002) / 0.0001);
         s.mux401 = (s.mux401 + 1) % 36; out.push(line(0x401, b));
       }
       return out;
