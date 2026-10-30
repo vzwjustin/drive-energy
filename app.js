@@ -2,6 +2,12 @@
    → CanDecode → trip math → screen. Demo mode feeds the same path from CanSim. */
 (() => {
   "use strict";
+  // Show script errors on screen instead of failing silently, so they can be reported.
+  window.addEventListener("error", e => {
+    const n = document.getElementById("notice"); if (!n) return;
+    n.hidden = false; n.dataset.tone = "bad";
+    document.getElementById("noticeText").textContent = `Something broke: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno}). Reload; if it stays, send this to Claude.`;
+  });
   const $ = id => document.getElementById(id);
   const D = window.CanDecode;
   const LISTEN = Object.values(D.IDS);
