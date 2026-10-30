@@ -114,6 +114,21 @@ Tap **Tessie** to run the same screen from Tessie's cloud instead of the adapter
 - Trip energy in Tessie mode comes from the drop in energy remaining (0.01 kWh steps). Regen and brick voltages aren't available there; bricks need the adapter.
 - Tessie mode keeps its own trip, separate from the adapter's.
 
+## Auto-connect (v21)
+
+After you pick the adapter once, Chrome remembers the permission. While the page is open (Drive view on a mounted phone works well) and nothing else is connected, the app tries that adapter:
+
+- on page load,
+- whenever Chrome reports the Bluetooth adapter in range,
+- every 15 s,
+- and again when you switch back to the tab.
+
+The chip shows **Looking for the adapter…** until the car powers the OBD port.
+
+- **Disconnect** pauses auto-connect until you tap **Connect car** again. You can turn it off under Settings.
+- **Limit:** Chrome can't connect while the page is closed or in the background. Web pages can't run Bluetooth in the background, so open the app (or keep it as the home-screen app) when you get in.
+- Close Scan My Tesla and other OBD apps first: the adapter allows one connection at a time.
+
 ## What's on screen and where it comes from
 
 | Value | CAN ID | Notes |

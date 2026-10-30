@@ -61,19 +61,26 @@
   }
 
   /* ---------------- car connection ---------------- */
-  async function connectCar() {
+  // auto = true: a background attempt with an adapter Chrome already has permission for (no chooser, quiet on failure).
+  async function connectCar(auto = false) {
     if (!window.ElmLink || !ElmLink.supported()) {
-      notice("This browser can't open Bluetooth serial ports. Use Chrome 138 or newer on Android, opened from an https:// address.", "bad");
+      if (!auto) notice("This browser can't open Bluetooth serial ports. Use Chrome 138 or newer on Android, opened from an https:// address.", "bad");
       return;
     }
+    if (app.connecting) return; app.connecting = true;
+    if (!auto) app.userStopped = false;
+    if (auto && app.source) { app.connecting = false; return; }
     stopDemo(); stopTessie();
     const link = new ElmLink({ onLine, onStatus: onLinkStatus });
     try {
       let port = app.port;
       if (!port) {
         const known = await navigator.serial.getPorts();
-        port = known.length === 1 ? known[0] : await link.pick();
+        const saved = cfg.portInfo && known.find(p => { const i = p.getInfo ? p.getInfo() : {}; return i.bluetoothServiceClassId && i.bluetoothServiceClassId === cfg.portInfo.bluetoothServiceClassId; });
+        port = saved || (known.length >= 1 && auto ? known[0] : known.length === 1 ? known[0] : null);
+        if (!port) { if (auto) throw Object.assign(new Error("no granted adapter"), { quiet: true }); port = await link.pick(); }
       }
+      try { cfg.portInfo = port.getInfo ? port.getInfo() : null; store(KEY.cfg, cfg); } catch (e) {}
       app.port = port; app.link = link; app.source = "car";
       status("connecting", "Connecting");
       notice(null);
@@ -84,14 +91,37 @@
       status("live", "Live");
       $("adapter").textContent = `${link.chip.replace(/\s+/g, " ")} · ${link.mode === "stn" ? "STN filters, continuous" : "ELM round-robin, ~1 s refresh"} · listen-only`;
       keepAwake();
+      if (auto) notice("Connected to the adapter automatically.", "info");
     } catch (e) {
-      const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the OBDLink MX+ in Android Bluetooth settings first, then tap Connect car." : (e.message || String(e));
-      notice(msg, "bad");
       await link.close().catch(() => {});
       app.link = null; app.source = null;
-      if (e && e.name !== "NotFoundError") app.port = null;
-      status("off", "Not connected");
-    }
+      if (auto) {
+        // Adapter not powered/in range yet (car off, phone just got in): keep the remembered port and try again soon.
+        status("off", app.port || (e && !e.quiet) ? "Looking for the adapter…" : "Not connected");
+      } else {
+        const msg = e && e.name === "NotFoundError" ? "No adapter picked. Pair the adapter in Android Bluetooth settings first, then tap Connect car." : (e.message || String(e));
+        notice(msg, "bad");
+        if (e && e.name !== "NotFoundError") app.port = null;
+        status("off", "Not connected");
+      }
+    } finally { app.connecting = false; }
+  }
+
+  /* Auto-connect: once you've picked the adapter one time, Chrome remembers the permission. While this page is open
+     and nothing else is connected, try that adapter on load, whenever Chrome reports it in range, and every 15 s.
+     A manual Disconnect pauses this until you tap Connect car again. */
+  function autoEligible() { return cfg.autoConnect !== false && !app.source && !app.userStopped && !app.connecting && !document.hidden && window.ElmLink && ElmLink.supported(); }
+  async function autoTry() {
+    if (!autoEligible()) return;
+    try { const known = await navigator.serial.getPorts(); if (!known.length) return; } catch (e) { return; }
+    connectCar(true);
+  }
+  if (window.ElmLink && ElmLink.supported()) {
+    navigator.serial.addEventListener("connect", e => { if (autoEligible()) { app.port = e.target || app.port; connectCar(true); } });
+    navigator.serial.addEventListener("disconnect", () => { if (app.source === "car") status("connecting", "Adapter went away, waiting…"); });
+    setTimeout(autoTry, 800);
+    setInterval(autoTry, 15000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(autoTry, 500); });
   }
   function onLinkStatus(s) {
     if (s.type === "init") status("connecting", s.message);
@@ -104,6 +134,7 @@
   }
   async function disconnect() {
     const src = app.source;
+    if (src === "car") app.userStopped = true;
     if (src === "demo") stopDemo();
     if (src === "tessie") stopTessie();
     app.source = null;
@@ -903,6 +934,8 @@
   $("cfgBrick").value = cfg.brick; $("cfgBase").value = cfg.oneBased ? "1" : "0"; $("cfgAwake").checked = cfg.keepAwake;
   $("cfgBrick").addEventListener("change", e => { const n = Math.round(+e.target.value); const lo = cfg.oneBased ? 1 : 0; if (n >= lo && n <= lo + 107) { cfg.brick = n; store(KEY.cfg, cfg); } });
   $("cfgBase").addEventListener("change", e => { cfg.oneBased = e.target.value === "1"; store(KEY.cfg, cfg); });
+  $("cfgAuto").checked = cfg.autoConnect !== false;
+  $("cfgAuto").addEventListener("change", e => { cfg.autoConnect = e.target.checked; store(KEY.cfg, cfg); if (e.target.checked) autoTry(); });
   $("cfgAlerts").value = cfg.alerts || "off";
   $("cfgAlerts").addEventListener("change", e => { cfg.alerts = e.target.value; store(KEY.cfg, cfg); unlockAudio(); });
   $("alertTest").addEventListener("click", () => { unlockAudio(); fireAlert("ease", true); setTimeout(() => fireAlert("brake", true), 900); });
