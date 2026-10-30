@@ -144,6 +144,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .sbar{height:8px;background:var(--raised);border-radius:4px;overflow:hidden}
 .sbar i{display:block;height:100%;background:var(--rated)}
 .srow.sweet .sbar i{background:var(--energy)} .srow.cur{border-color:var(--fg)}
+.diagtext{font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--raised);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;max-height:420px;overflow-y:auto;user-select:text;-webkit-user-select:text}
 footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:12.5px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -281,6 +282,15 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <button class="btn" id="recBtn" type="button">Record CSV</button>
       <button class="btn" id="dlBtn" type="button" hidden>Download CSV</button>
     </div>
+  </section>
+
+  <section class="panel">
+    <details id="diag">
+      <summary>Diagnostics · what the adapter is sending</summary>
+      <p class="note">If readings are missing, connect the car, wait 20 seconds, then tap Copy diagnostics and paste it to Claude.</p>
+      <div class="btns" style="margin:10px 0"><button class="btn primary" id="diagCopy" type="button">Copy diagnostics</button></div>
+      <pre id="diagText" class="diagtext"></pre>
+    </details>
   </section>
 
   <footer><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>

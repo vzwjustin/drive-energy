@@ -18,6 +18,7 @@
     frames: 0, fps: 0, lastFrameAt: 0, pEma: null, synthNet: 0, synthOdo: 0, lastTick: performance.now(),
     restartAt: 0, trip: load(KEY.trip, null), rec: null, wake: null, lastSave: 0,
     tessieTimer: null, vin: null, tessieBusy: false,
+    idStats: {}, rawLines: [], bufferFull: 0,
   };
   const realCoach = Coach.createCoach({ loadBuckets: () => load(KEY.speed, {}), saveBuckets: b => store(KEY.speed, b) });
   app.coach = realCoach;
@@ -37,7 +38,14 @@
   /* ---------------- frames in ---------------- */
   function onLine(line) {
     const f = D.parseLine(line);
-    if (f) { dec.decode(f.id, f.bytes); app.frames++; app.lastFrameAt = performance.now(); return; }
+    if (f) {
+      const r = dec.decode(f.id, f.bytes); app.frames++; app.lastFrameAt = performance.now();
+      const s = (app.idStats[f.id] ||= { n: 0, ok: 0, last: 0, sample: "" });
+      s.n++; if (r) s.ok++; s.last = app.lastFrameAt; s.sample = line.replace(/\s+/g, "");
+      return;
+    }
+    app.rawLines.push(`${new Date().toLocaleTimeString()}  ${line}`); if (app.rawLines.length > 30) app.rawLines.shift();
+    if (/BUFFER FULL/i.test(line)) app.bufferFull++;
     if (/BUFFER FULL|DATA ERROR|CAN ERROR|<RX ERROR/i.test(line) && app.link && performance.now() - app.restartAt > 2000) {
       app.restartAt = performance.now();
       app.link.restartMonitor().catch(() => {});
@@ -113,7 +121,7 @@
     if (app.source === "demo") { app.trip = app.savedTrip ?? load(KEY.trip, null); app.source = null; notice(null); }
     app.coach = realCoach;
   }
-  function resetDecoder() { dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; }
+  function resetDecoder() { dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
 
   /* ---------------- trip + consumption math ----------------
      Energy: lifetime counters on 0x3D2 (kWh out minus kWh in) — exact to 1 Wh, regen included.
@@ -426,6 +434,35 @@
     requestAnimationFrame(meterFrame);
   }
   requestAnimationFrame(meterFrame);
+
+  /* ---------------- diagnostics ---------------- */
+  const ID_NAMES = { 0x118: "pedal/brake/gear", 0x132: "pack V/A → power", 0x252: "power limits", 0x257: "speed", 0x267: "road grade", 0x292: "SOC",
+    0x2A8: "climate compressor", 0x312: "pack temps", 0x321: "outside temp", 0x33A: "rated range", 0x352: "energy remaining/full pack", 0x3B6: "odometer",
+    0x3D2: "lifetime kWh (trip energy)", 0x401: "brick voltages" };
+  function diagText() {
+    const now = performance.now(), lines = [];
+    lines.push(`Drive Energy diagnostics · ${new Date().toISOString()}`);
+    lines.push(`Source: ${app.source || "none"} · adapter: ${app.link ? app.link.chip : "—"} · mode: ${app.link ? app.link.mode : "—"}${app.link && app.link.mode === "elm" ? ` · ATCRA wildcards: ${app.link.useCra ? "yes" : "no (ATCF/ATCM)"}` : ""}`);
+    lines.push(`Frames total: ${app.frames} · now ${app.fps}/s · BUFFER FULL: ${app.bufferFull} · 0x352 format: ${dec.meta.fmt352 || "undetected"}`);
+    lines.push("", "ID    frames  decoded  last seen   what");
+    for (const id of LISTEN) {
+      const s = app.idStats[id];
+      lines.push(`${id.toString(16).toUpperCase().padStart(3, "0")}  ${String(s ? s.n : 0).padStart(7)}  ${String(s ? s.ok : 0).padStart(7)}  ${s ? ((now - s.last) / 1000).toFixed(1).padStart(7) + " s" : "  never  "}   ${ID_NAMES[id] || ""}${s ? "   last: " + s.sample : ""}`);
+    }
+    const other = Object.keys(app.idStats).map(Number).filter(id => !LISTEN.includes(id));
+    if (other.length) lines.push(`Other IDs seen: ${other.map(i => i.toString(16).toUpperCase()).join(", ")}`);
+    lines.push("", "Decoded now:", JSON.stringify({ ...L, bricks: `${L.bricks.filter(v => v != null).length}/108` }, (k, v) => (typeof v === "number" ? +v.toFixed(3) : v)));
+    lines.push("", "Adapter commands:", ...((app.link && app.link.log) || ["—"]));
+    lines.push("", "Other adapter output:", ...(app.rawLines.length ? app.rawLines : ["—"]));
+    return lines.join("\n");
+  }
+  setInterval(() => { const d = $("diag"); if (d && d.open) $("diagText").textContent = diagText(); }, 1000);
+  $("diag").addEventListener("toggle", () => { if ($("diag").open) $("diagText").textContent = diagText(); });
+  $("diagCopy").addEventListener("click", async () => {
+    const text = diagText(); $("diagText").textContent = text;
+    try { await navigator.clipboard.writeText(text); $("diagCopy").textContent = "Copied"; setTimeout(() => ($("diagCopy").textContent = "Copy diagnostics"), 2000); }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($("diagText")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $("diagCopy").textContent = "Selected: long-press to copy"; }
+  });
 
   /* ---------------- CSV recording ---------------- */
   const COLS = ["time", "speed_mph", "power_kw", "pack_v", "pack_a", "odometer_mi", "total_out_kwh", "total_in_kwh", "soc_pct", "energy_remaining_kwh", "full_pack_kwh", "brick_min_v", "brick_max_v", "watched_brick", "watched_brick_v", "pack_tmin_c", "pack_tmax_c"];

@@ -69,14 +69,19 @@
       if (this.buf.length > 4096) this.buf = this.buf.slice(-512);
     }
 
+    _log(cmd, reply) {
+      (this.log ||= []).push(`${cmd} → ${reply}`);
+      if (this.log.length > 80) this.log.splice(0, this.log.length - 80);
+    }
+
     async _write(s) { await this.writer.write(new TextEncoder().encode(s)); }
 
     // Send an AT/ST command and wait for the ">" prompt.
     cmd(s, timeout = 2500) {
       return new Promise(async (resolve, reject) => {
         if (this.waiter) { reject(new Error("busy")); return; }
-        const w = { lines: [], resolve, timer: null };
-        w.timer = setTimeout(() => { if (this.waiter === w) this.waiter = null; reject(new Error(`No reply to ${s}`)); }, timeout);
+        const w = { lines: [], resolve: lines => { this._log(s, lines.join(" | ") || "(prompt only)"); resolve(lines); }, timer: null };
+        w.timer = setTimeout(() => { if (this.waiter === w) this.waiter = null; this._log(s, "NO REPLY"); reject(new Error(`No reply to ${s}`)); }, timeout);
         this.waiter = w;
         try { await this._write(s + "\r"); } catch (e) { clearTimeout(w.timer); this.waiter = null; reject(e); }
       });
