@@ -3,6 +3,7 @@
    or when the driver taps End drive. Pure logic: the app feeds it cumulative counters each tick. */
 (function (root) {
   "use strict";
+  const KEEP = 500;                                         // ~300 KB of history in localStorage
 
   // Same formula as the live score: 70% consumption vs rated (100 at ≤85%, 0 at ≥150%), 30% pedal in range.
   function score(wh, rated, pedalPct) {
@@ -67,7 +68,7 @@
       };
       d.score = score(wh, rated, pedalPct);
       d.habit = habit(d);
-      if (!d.demo) { s.history.unshift(d); if (s.history.length > 60) s.history.length = 60; if (save) save(s.history); }
+      if (!d.demo) { s.history.unshift(d); if (s.history.length > KEEP) s.history.length = KEEP; if (save) save(s.history); }
       return d;
     }
 
@@ -96,7 +97,7 @@
     };
   }
 
-  const api = { createDrives, score, habit, clean };
+  const api = { createDrives, score, habit, clean, KEEP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Drives = api;
 })(typeof self !== "undefined" ? self : this);

@@ -12,7 +12,7 @@ function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock =
   let reloads = 0;
   const el = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {} }, children: [{ style: {} }, { style: {} }],
     textContent: "", innerHTML: "", hidden: false, value: "", checked: false, open: false, clientWidth: 0, clientHeight: 0, on: {},
-    addEventListener(t, f) { this.on[t] = f; }, setAttribute() {}, focus() {}, scrollIntoView() {}, replaceChildren() {}, appendChild() {}, querySelectorAll: () => [], click() {}, remove() {} });
+    addEventListener(t, f) { this.on[t] = f; }, showModal() { this.open = true; }, close() { this.open = false; }, setAttribute() {}, focus() {}, scrollIntoView() {}, replaceChildren() {}, appendChild() {}, querySelectorAll: () => [], click() {}, remove() {} });
   const store = storage instanceof Map ? storage : new Map(Object.entries(storage).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
   const later = fn => (f, ms, ...a) => { const id = fn(f, (ms || 0) / scale, ...a); timers.push(id); return id; };
   class PageURL extends URL {}
@@ -273,6 +273,16 @@ const test = async (name, fn) => {
     const app = boot({ storage: { "de.tessie.v1": "tok", "de.drives.v1": drives, "de.cfg.v1": { tab: "battery" } }, fetch: tes.fetch, scale: 20 });
     app.click("tessieBtn"); await wait(1300);                // the plan redraws once a second
     assert.ok(/at 242 Wh\/mi/.test(app.html("planRows")) && /your last 2 drives/.test(app.html("planRows")), app.html("planRows"));
+    app.stop();
+  });
+
+  await test("drive list shows 8 drives with Show all for the rest", async () => {
+    const drives = Array.from({ length: 12 }, (_, i) => ({ id: String(i + 1), t0: i + 1, mi: 10, kwh: 2.5, wh: 250, score: 70 }));
+    const app = boot({ storage: { "de.drives.v1": drives } });
+    const rows = () => (app.html("driveList").match(/class="drow"/g) || []).length;
+    assert.strictEqual(rows(), 8); assert.ok(/Show all 12/.test(app.html("driveList")));
+    app.click("driveMore");
+    assert.strictEqual(rows(), 12); assert.ok(/Show fewer/.test(app.html("driveList")));
     app.stop();
   });
 

@@ -64,7 +64,7 @@ Four tabs: on a phone they sit at the bottom of the screen, on a wider screen ac
 - **Climate / parked draw chip:** compressor kW, or standby draw while stopped, converted to **miles of range per hour** at your pace.
 - **Speed curve:** your learned Wh/mi by speed, with the sweet spot and your current speed marked, plus how far your current charge goes at each speed.
 - **Charge plan:** what % to charge to for the miles you need plus an arrival reserve, at your last 7 drives' Wh/mi weighted by distance (so a short hop doesn't skew it), then this trip, then rated.
-- **Drive summaries and history:** a score, comparison with rated, slowdown capture, energy breakdown and the one habit to fix, with trends across drives.
+- **Drive summaries and history:** a score, comparison with rated, slowdown capture, energy breakdown and the one habit to fix, with trends across drives. The last 500 drives are kept on the phone; the list shows 8, and **Show all** lists the rest.
 - Slower-changing panels redraw once a second, and only on the tab you're looking at, to keep the phone cool in a mount.
 
 ## Eyes-free alerts (Setup tab, off by default)

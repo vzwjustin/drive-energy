@@ -869,14 +869,10 @@
       ${compareLine(d)}`;
     $("sumDelete").hidden = d.demo || !drives.history.some(x => x.id === d.id);
     $("sumDelete").dataset.id = d.id; $("sumDelete").textContent = "Delete drive";
-    if ($("summary").hidden) app.sumFrom = document.activeElement;      // focus goes back there on close
-    $("summary").hidden = false; $("sumDone").focus();
+    if (!$("summary").open) $("summary").showModal();    // modal <dialog>: keeps focus inside, Esc closes, focus returns on close
+    $("sumDone").focus();
   }
-  function closeSummary() {
-    if ($("summary").hidden) return;
-    $("summary").hidden = true; app.sumFrom?.focus?.(); app.sumFrom = null;
-  }
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSummary(); });
+  function closeSummary() { if ($("summary").open) $("summary").close(); }
   // How this drive compares with your typical one (median of the other saved drives).
   function compareLine(d) {
     const others = drives.history.filter(x => x.id !== d.id && x.wh > 0);
@@ -897,10 +893,12 @@
     $("endDrive").hidden = !drives.active;
     if (!h.length) { $("driveTrend").innerHTML = ""; box.innerHTML = `<p class="note">Each drive gets a summary and a score when you park (20 s in P). They're kept on this phone.</p>`; return; }
     renderTrend(h);
-    box.innerHTML = h.slice(0, 8).map(d => `<button class="drow" type="button" data-id="${d.id}">
+    box.innerHTML = (app.allDrives ? h : h.slice(0, 8)).map(d => `<button class="drow" type="button" data-id="${d.id}">
       <span class="dwhen">${fmtWhen(d.t0)}</span><span class="num">${d.mi.toFixed(1)} mi</span><span class="num">${Math.round(d.wh)} Wh/mi</span>
-      <span class="dscore" data-tone="${d.score >= 80 ? "good" : d.score >= 60 ? "warn" : "bad"}">${d.score ?? "—"}</span></button>`).join("");
+      <span class="dscore" data-tone="${d.score >= 80 ? "good" : d.score >= 60 ? "warn" : "bad"}">${d.score ?? "—"}</span></button>`).join("")
+      + (h.length > 8 ? `<button class="btn sm" id="driveMore" type="button">${app.allDrives ? "Show fewer" : `Show all ${h.length}`}</button>` : "");
     box.querySelectorAll(".drow").forEach(b => b.addEventListener("click", () => { const d = drives.history.find(x => x.id === b.dataset.id); if (d) showSummary(d); }));
+    if (h.length > 8) $("driveMore").addEventListener("click", () => { app.allDrives = !app.allDrives; renderDrives(); });
   }
   // Trend: last 12 scores as bars (oldest left), recent-vs-previous averages, best, and range saved vs rated.
   function renderTrend(h) {
@@ -1052,7 +1050,7 @@
     try { o = JSON.parse(await f.text()); } catch (err) {}
     if (!o || o.app !== "drive-energy") { notice("That file isn't a Drive Energy backup.", "bad"); return; }
     // The file is untrusted: keep only well-formed numbers. Drives are rebuilt, so their text is regenerated here.
-    const list = Array.isArray(o.drives) ? o.drives.map(d => Drives.clean(d)).filter(Boolean).slice(0, 60) : [], speed = {};
+    const list = Array.isArray(o.drives) ? o.drives.map(d => Drives.clean(d)).filter(Boolean).slice(0, Drives.KEEP) : [], speed = {};
     for (const [k, v] of Object.entries(o.speed && typeof o.speed === "object" ? o.speed : {}))
       if (/^\d{1,3}(\|(x|<40|40-59|60-79|80\+))?$/.test(k) && v && finite(v.kwh) && finite(v.mi) && v.mi >= 0) speed[k] = { kwh: v.kwh, mi: v.mi };
     if (app.source) await disconnect();                     // so nothing running saves over the import before the reload
