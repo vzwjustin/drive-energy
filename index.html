@@ -190,6 +190,11 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .fticks span{position:absolute;top:3px;transform:translateX(-50%)}
 body.drive .gnum{font-size:72px} body.drive .kpi .v{font-size:34px} body.drive .ftrack{height:30px}
 /* Drives list + summary sheet */
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-bottom:10px}
+.tv{font:600 24px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
+.tv[data-tone="good"],#driveTrend [data-tone="good"]{color:var(--regen)} .tv[data-tone="bad"],#driveTrend [data-tone="bad"]{color:var(--bad)}
+.trendbars{width:100%;height:46px;display:block;margin-bottom:12px}
+.trendbars{preserveAspectRatio:none}
 .dlist{display:flex;flex-direction:column;gap:6px}
 .drow{display:grid;grid-template-columns:minmax(0,1fr) auto auto 38px;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--raised);border:1px solid var(--line);text-align:left;font-size:13.5px}
 .drow .num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
@@ -335,6 +340,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="rail">
       <section class="panel" aria-label="Drives">
         <h2>Drives <button class="btn" id="endDrive" type="button" hidden style="font-size:12.5px;padding:5px 10px">End drive</button></h2>
+        <div id="driveTrend"></div>
         <div id="driveList" class="dlist"></div>
       </section>
 
@@ -422,16 +428,16 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
   </section>
 
   <div class="overlay" id="summary" hidden role="dialog" aria-modal="true" aria-label="Drive summary">
-    <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
+    <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v10</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v11</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=10"></script>
-<script src="elm.js?v=10"></script>
-<script src="sim.js?v=10"></script>
-<script src="coach.js?v=10"></script>
-<script src="drives.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="decode.js?v=11"></script>
+<script src="elm.js?v=11"></script>
+<script src="sim.js?v=11"></script>
+<script src="coach.js?v=11"></script>
+<script src="drives.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

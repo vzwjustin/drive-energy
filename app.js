@@ -601,20 +601,62 @@
         ${cell("Pedal in range", d.pedalPct == null ? "—" : `${d.pedalPct}%`, `${d.heavy} heavy · ${d.friction} brake-heavy stops`)}
         ${cell("Climate", d.climateKWh == null ? "—" : `${d.climateKWh.toFixed(2)} kWh`, d.climateKWh != null && d.kwh > 0 ? `${Math.round((d.climateKWh / d.kwh) * 100)}% of energy` : "")}
       </div>
-      <div class="shabit" data-tone="${d.habit.tone}"><div class="label">${d.habit.tone === "good" ? "Nice" : "Work on this next"}</div><p>${d.habit.text}</p></div>`;
+      <div class="shabit" data-tone="${d.habit.tone}"><div class="label">${d.habit.tone === "good" ? "Nice" : "Work on this next"}</div><p>${d.habit.text}</p></div>
+      ${compareLine(d)}`;
+    $("sumDelete").hidden = d.demo || !drives.history.some(x => x.id === d.id);
+    $("sumDelete").dataset.id = d.id; $("sumDelete").textContent = "Delete drive";
     $("summary").hidden = false;
   }
+  // How this drive compares with your typical one (median of the other saved drives).
+  function compareLine(d) {
+    const others = drives.history.filter(x => x.id !== d.id && x.wh > 0);
+    if (others.length < 3) return "";
+    const med = others.map(x => x.wh).sort((a, b) => a - b)[Math.floor(others.length / 2)];
+    const pct = Math.round((d.wh / med - 1) * 100);
+    return `<p class="note" style="margin-top:10px">${pct === 0 ? "Same as" : pct < 0 ? `${-pct}% more efficient than` : `${pct}% less efficient than`} your typical drive (${Math.round(med)} Wh/mi).</p>`;
+  }
   $("sumDone").addEventListener("click", () => ($("summary").hidden = true));
+  $("sumDelete").addEventListener("click", e => {
+    const b = e.currentTarget;
+    if (b.textContent !== "Tap again to delete") { b.textContent = "Tap again to delete"; return; }
+    drives.remove(b.dataset.id); $("summary").hidden = true; renderDrives();
+  });
   $("summary").addEventListener("click", e => { if (e.target.id === "summary") $("summary").hidden = true; });
   function renderDrives() {
     const h = drives.history, box = $("driveList");
     $("endDrive").hidden = !drives.active;
-    if (!h.length) { box.innerHTML = `<p class="note">Each drive gets a summary and a score when you park (20 s in P). They're kept on this phone.</p>`; return; }
+    if (!h.length) { $("driveTrend").innerHTML = ""; box.innerHTML = `<p class="note">Each drive gets a summary and a score when you park (20 s in P). They're kept on this phone.</p>`; return; }
+    renderTrend(h);
     box.innerHTML = h.slice(0, 8).map(d => `<button class="drow" type="button" data-id="${d.id}">
       <span class="dwhen">${fmtWhen(d.t0)}</span><span class="num">${d.mi.toFixed(1)} mi</span><span class="num">${Math.round(d.wh)} Wh/mi</span>
       <span class="dscore" data-tone="${d.score >= 80 ? "good" : d.score >= 60 ? "warn" : "bad"}">${d.score ?? "—"}</span></button>`).join("");
     box.querySelectorAll(".drow").forEach(b => b.addEventListener("click", () => { const d = drives.history.find(x => x.id === b.dataset.id); if (d) showSummary(d); }));
   }
+  // Trend: last 12 scores as bars (oldest left), recent-vs-previous averages, best, and range saved vs rated.
+  function renderTrend(h) {
+    const avg = (a, f) => { const v = a.map(f).filter(x => x != null && isFinite(x)); return v.length ? v.reduce((p, c) => p + c, 0) / v.length : null; };
+    const recent = h.slice(0, 7), prev = h.slice(7, 14);
+    const sNow = avg(recent, d => d.score), sPrev = avg(prev, d => d.score);
+    const whNow = avg(recent, d => d.wh), whPrev = avg(prev, d => d.wh);
+    const best = h.reduce((b, d) => (d.score != null && (!b || d.score > b.score) ? d : b), null);
+    const saved = h.slice(0, 30).reduce((p, d) => p + (d.rangeDeltaMi || 0), 0);
+    const bars = h.slice(0, 12).reverse();
+    const W = 240, H = 46, bw = W / 12;
+    const svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="trendbars" role="img" aria-label="Scores of the last ${bars.length} drives">${bars.map((d, i) => {
+      const sc = d.score ?? 0, hh = Math.max(3, (sc / 100) * (H - 4));
+      const c = sc >= 80 ? "var(--regen)" : sc >= 60 ? "var(--warn)" : "var(--bad)";
+      return `<rect x="${(i * bw + 2).toFixed(1)}" y="${(H - hh).toFixed(1)}" width="${(bw - 4).toFixed(1)}" height="${hh.toFixed(1)}" rx="2" fill="${c}"/>`; }).join("")}</svg>`;
+    const arrow = (now, before, lowerIsBetter) => { if (now == null || before == null) return ""; const better = lowerIsBetter ? now < before : now > before; const d = Math.abs(now - before);
+      return d < 0.5 ? " · steady" : ` · <span data-tone="${better ? "good" : "bad"}">${better ? "▲ better" : "▼ worse"} vs prior 7</span>`; };
+    $("driveTrend").innerHTML = `
+      <div class="tgrid">
+        <div><div class="label">Avg score, last ${recent.length}</div><div class="tv">${sNow == null ? "—" : Math.round(sNow)}</div><div class="sub">${arrow(sNow, sPrev, false).replace(/^ · /, "")}</div></div>
+        <div><div class="label">Avg Wh/mi, last ${recent.length}</div><div class="tv">${whNow == null ? "—" : Math.round(whNow)}</div><div class="sub">${arrow(whNow, whPrev, true).replace(/^ · /, "")}</div></div>
+        <div><div class="label">Best score</div><div class="tv">${best ? best.score : "—"}</div><div class="sub">${best ? fmtWhen(best.t0) : ""}</div></div>
+        <div><div class="label">Range vs rated</div><div class="tv" data-tone="${saved >= 0 ? "good" : "bad"}">${signed(saved)} mi</div><div class="sub">last ${Math.min(30, h.length)} drives combined</div></div>
+      </div>${svg}`;
+  }
+
   $("endDrive").addEventListener("click", () => {
     if (!app.trip) return;
     const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
