@@ -165,8 +165,9 @@
   }
 
   /* ---------------- demo ---------------- */
-  function startDemo() {
-    if (app.link) disconnect();
+  async function startDemo() {
+    // Fully stop the adapter or Tessie first, so neither overwrites the demo's status or swaps trips afterwards.
+    if (app.source) { await disconnect(); if (app.source) return; }   // a second tap already started the demo
     resetDecoder();
     app.source = "demo"; app.sim = CanSim.createSim();
     app.savedTrip = app.trip; app.trip = null;            // demo never touches your real trip
@@ -181,7 +182,7 @@
     if (app.source === "demo") { app.trip = app.savedTrip ?? load(KEY.trip, null); app.source = null; notice(null); }
     app.coach = realCoach;
   }
-  function resetDecoder() { drives.cancel(); stops.reset(); app.climateKWh = 0; dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
+  function resetDecoder() { drives.cancel(); stops.reset(); app.climateKWh = 0; app.liveAt = 0; dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
 
   /* ---------------- trip + consumption math ----------------
      Energy: lifetime counters on 0x3D2 (kWh out minus kWh in) — exact to 1 Wh, regen included.
@@ -194,8 +195,12 @@
     const hasTotals = L.totalOutKWh != null, net = hasTotals ? L.totalOutKWh - L.totalInKWh : app.synthNet;
     const odo = L.odoMi != null ? L.odoMi : app.synthOdo;
     const live = app.source && (now - app.lastFrameAt < (app.source === "tessie" ? 45000 : 4000));
+    // After a (re)connect, pack power arrives well before the kWh and odometer frames (ELM round-robin: 10–20 s).
+    // Wait for both (or 30 s, then integrate instead) so the saved trip isn't taken for a new source and reset.
+    if (live && !app.liveAt) app.liveAt = now;
+    const settled = (hasTotals && L.odoMi != null) || (live && now - app.liveAt > 30000);
 
-    if (app.source && live && (L.powerKW != null || hasTotals)) {
+    if (app.source && live && settled && (L.powerKW != null || hasTotals)) {
       let t = app.trip;
       const fresh = !t || t.src !== (hasTotals ? "c" : "s") + (L.odoMi != null ? "o" : "i") || Math.abs(odo - t.lastOdo) > 50 || Math.abs(net - t.lastNet) > 30;
       if (fresh) t = app.trip = { t0: Date.now(), src: (hasTotals ? "c" : "s") + (L.odoMi != null ? "o" : "i"), odo0: odo, lastOdo: odo, lastNet: net, lastIn: L.totalInKWh ?? 0, drive: 0, park: 0, regen: 0, charged: 0, D: [0], E: [0] };
@@ -238,7 +243,7 @@
         }
       }
     }
-    if (live && (app.source === "car" || app.source === "demo") && app.trip) {
+    if (live && settled && (app.source === "car" || app.source === "demo") && app.trip) {
       const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
       const done = drives.update({
         odo, mph: L.speedMph, gear: L.gear, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen,
@@ -504,16 +509,11 @@
     }
     if (app.source === "car" || app.source === "demo") await disconnect();
     resetDecoder();
-    app.source = "tessie"; app.trip = load(KEY.tripT, null); app.tessieAt = null;
+    app.source = "tessie"; app.trip = load(KEY.tripT, null); app.tessieAt = null; app.vin = null;
     status("connecting", "Reaching Tessie"); notice(null);
-    try {
-      const v = await tget("vehicles?only_active=true");
-      const list = v.results || [];
-      if (!list.length) throw Object.assign(new Error("No vehicles on this Tessie account."), { status: 0 });
-      app.vin = list[0].vin;
-      await pollTessie();
-      app.tessieTimer = setInterval(() => { if (!document.hidden) pollTessie(); }, 10000);
-    } catch (e) { tessieError(e); }
+    // Poll from the start (finding the car first) so a failed first request is retried too.
+    app.tessieTimer = setInterval(() => { if (!document.hidden) pollTessie(); }, 10000);
+    await pollTessie();
   }
   function stopTessie() {
     if (app.tessieTimer) { clearInterval(app.tessieTimer); app.tessieTimer = null; }
@@ -523,6 +523,11 @@
     if (app.tessieBusy || app.source !== "tessie") return;
     app.tessieBusy = true;
     try {
+      if (!app.vin) {
+        const list = (await tget("vehicles?only_active=true")).results || [];
+        if (!list.length) throw Object.assign(new Error("No vehicles on this Tessie account."), { status: 0 });
+        app.vin = list[0].vin;
+      }
       const [bat, st] = await Promise.all([tget(`${app.vin}/battery`), tget(`${app.vin}/state?use_cache=true`)]);
       if (app.source !== "tessie") return;
       const ds = st.drive_state || {}, vs = st.vehicle_state || {}, cs = st.charge_state || {};

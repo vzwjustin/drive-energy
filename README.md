@@ -188,6 +188,6 @@ Tap **Record CSV** to log one row per second: speed, power, V/A, odometer, kWh c
 - `coach.js`: pedal/brake efficiency coach and speed-band learning
 - `sim.js`: demo frame generator (the **Demo** button)
 - `sw.js`, `manifest.webmanifest`, `icon.svg`: offline install
-- `tests/decode.test.js`, `tests/elm.test.js`: run with `node tests/decode.test.js && node tests/elm.test.js`
+- `tests/`: run with `for t in decode elm app sw; do node tests/$t.test.js || break; done` (`app.test.js` boots `app.js` on a stub page against a fake adapter and a fake Tessie)
 
 Signal layouts come from the community DBC at github.com/joshwardell/model3dbc (MIT) and the 2021+ `0x352` mux layout documented in the Battery-Emulator project. This is unofficial and not affiliated with Tesla.

@@ -27,8 +27,10 @@
 
     async open(port) {
       this.port = port || this.port;
-      await this.port.open({ baudRate: 115200, bufferSize: 65536 });
       this.closed = false;
+      await this.port.open({ baudRate: 115200, bufferSize: 65536 });
+      // close() ran while Bluetooth was still connecting (the app gave up): don't keep the port open.
+      if (this.closed) { try { await this.port.close(); } catch (e) {} throw new Error("Connection cancelled"); }
       this.writer = this.port.writable.getWriter();
       this._readLoop();
     }
