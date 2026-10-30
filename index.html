@@ -189,6 +189,29 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .fticks{position:relative;height:16px;font:500 11px var(--f-num);color:var(--muted)}
 .fticks span{position:absolute;top:3px;transform:translateX(-50%)}
 body.drive .gnum{font-size:72px} body.drive .kpi .v{font-size:34px} body.drive .ftrack{height:30px}
+/* Drives list + summary sheet */
+.dlist{display:flex;flex-direction:column;gap:6px}
+.drow{display:grid;grid-template-columns:minmax(0,1fr) auto auto 38px;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--raised);border:1px solid var(--line);text-align:left;font-size:13.5px}
+.drow .num{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-weight:600}
+.dwhen{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dscore{font:700 15px var(--f-num);text-align:center;border-radius:8px;padding:2px 0}
+.dscore[data-tone="good"]{color:var(--regen)} .dscore[data-tone="warn"]{color:var(--warn)} .dscore[data-tone="bad"]{color:var(--bad)}
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:grid;place-items:end center;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+@media (min-width:700px){.overlay{place-items:center}}
+.sheet{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;width:min(560px,100%);max-height:90vh;overflow-y:auto}
+.shead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}
+.shead h3{margin:0;font:600 20px var(--f-num)}
+.sscore{display:flex;flex-direction:column;align-items:center;justify-content:center;width:76px;height:76px;border-radius:50%;border:4px solid var(--line);flex:none}
+.sscore span{font:700 28px/1 var(--f-num)} .sscore small{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.sscore[data-tone="good"]{border-color:var(--regen)} .sscore[data-tone="warn"]{border-color:var(--warn)} .sscore[data-tone="bad"]{border-color:var(--bad)}
+.sgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:480px){.sgrid{grid-template-columns:1fr 1fr}}
+.scell{background:var(--raised);border-radius:10px;padding:9px 10px;min-width:0}
+.sv{font:600 21px/1.15 var(--f-num);font-variant-numeric:tabular-nums}
+.scell .sub{font-size:11.5px;color:var(--muted)}
+.shabit{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--raised);border-left:4px solid var(--warn)}
+.shabit[data-tone="good"]{border-left-color:var(--regen)} .shabit p{margin:4px 0 0;font-size:15.5px;font-weight:500}
+body.drive .overlay .sheet{font-size:16px}
 /* Max-range guide strip */
 .guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .gchip{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:12px;background:var(--raised);border:1px solid var(--line);text-align:left;min-width:0}
@@ -310,6 +333,11 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     </section>
 
     <div class="rail">
+      <section class="panel" aria-label="Drives">
+        <h2>Drives <button class="btn" id="endDrive" type="button" hidden style="font-size:12.5px;padding:5px 10px">End drive</button></h2>
+        <div id="driveList" class="dlist"></div>
+      </section>
+
       <section class="panel" aria-label="Coach">
         <h2>Coach <span>this trip</span></h2>
         <div class="kv" style="grid-template-columns:1fr 1fr">
@@ -393,12 +421,17 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     </details>
   </section>
 
-  <footer><span id="ver">v9</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <div class="overlay" id="summary" hidden role="dialog" aria-modal="true" aria-label="Drive summary">
+    <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
+  </div>
+
+  <footer><span id="ver">v10</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=9"></script>
-<script src="elm.js?v=9"></script>
-<script src="sim.js?v=9"></script>
-<script src="coach.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="decode.js?v=10"></script>
+<script src="elm.js?v=10"></script>
+<script src="sim.js?v=10"></script>
+<script src="coach.js?v=10"></script>
+<script src="drives.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

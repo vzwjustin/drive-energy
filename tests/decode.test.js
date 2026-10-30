@@ -109,4 +109,31 @@ t("simulator → parser → decoder end to end", () => {
   assert.ok(s.pedalPct >= 0 && s.pedalPct <= 100 && s.gear === "D", "pedal + gear decoded");
 });
 
+t("drives: segment ends after 20 s in P and summarizes deltas", () => {
+  const Dr = require("../drives.js");
+  const saved = []; const d = Dr.createDrives({ load: () => [], save: h => saved.push(h.length) });
+  let x = { odo: 100, mph: 0, gear: "P", drive: 5, park: 1, regen: 2, climateKWh: 0.5, heavy: 1, friction: 0, pressedSec: 0, rightSec: 0, rated: 220, sweetBand: 55 };
+  assert.strictEqual(d.update(x, 1, 0), null);
+  let out = null, t0 = 1;
+  for (let i = 0; i < 600; i++) {               // 10 min at 60 mph, 230 Wh/mi, pedal 80% in range
+    x = { ...x, mph: 60, gear: "D", odo: x.odo + 60 / 3600, drive: x.drive + 0.23 * 60 / 3600, regen: x.regen + 0.0002, pressedSec: x.pressedSec + 1, rightSec: x.rightSec + 0.8 };
+    out = d.update(x, 1, t0 + i) || out;
+  }
+  assert.ok(d.active && !out);
+  for (let i = 0; i < 25; i++) out = d.update({ ...x, mph: 0, gear: "P" }, 1, 700 + i) || out;
+  assert.ok(out && !d.active);
+  near(out.mi, 10, 0.02, "mi"); near(out.wh, 230, 1, "wh"); assert.strictEqual(out.pedalPct, 80);
+  assert.strictEqual(out.vsRatedPct, 5); near(out.rangeDeltaMi, 10 - 2300 / 220, 0.05, "range delta");
+  assert.strictEqual(out.score, Dr.score(out.wh, 220, 80)); assert.strictEqual(out.cruiseBand, 60);
+  assert.strictEqual(saved.length, 1);
+});
+
+t("drives: habit picks the biggest issue", () => {
+  const Dr = require("../drives.js");
+  assert.ok(/Lift off earlier/.test(Dr.habit({ friction: 4, heavy: 5, pedalPct: 40 }).text));
+  assert.ok(/Ease take-offs/.test(Dr.habit({ friction: 0, heavy: 5, pedalPct: 40 }).text));
+  assert.ok(/60–64 mph/.test(Dr.habit({ friction: 0, heavy: 0, pedalPct: 80, cruiseBand: 70, sweetBand: 60 }).text));
+  assert.strictEqual(Dr.habit({ friction: 0, heavy: 0, pedalPct: 85, vsRatedPct: -3 }).tone, "good");
+});
+
 console.log(`\n${pass} passed`);
