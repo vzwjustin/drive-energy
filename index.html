@@ -154,7 +154,15 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .effgauge .val{fill:none;stroke-width:18;stroke-linecap:round;transition:stroke-dasharray .45s ease,stroke .3s}
 .effgauge text{font:500 11px var(--f-num);fill:var(--muted)}
 .effgauge .tgt{stroke:var(--fg);stroke-width:3}
-.effgauge .avgdot{fill:var(--energy);stroke:var(--surface);stroke-width:2;transition:cx .6s,cy .6s}
+.miles{margin-top:14px}
+.mhead{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}
+.mbars{position:relative;display:flex;align-items:flex-end;gap:5px;height:74px;padding-bottom:16px}
+.mb{position:relative;flex:1 1 0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;min-width:0}
+.mb i{display:block;border-radius:4px 4px 1px 1px;background:var(--rated)}
+.mb b{position:absolute;bottom:-16px;left:0;right:0;text-align:center;font:500 10.5px var(--f-num);color:var(--muted)}
+.mb[data-tone="good"] i{background:var(--regen)} .mb[data-tone="warn"] i{background:var(--warn)} .mb[data-tone="bad"] i{background:var(--bad)}
+.mb.partial i{opacity:.55}
+.mtarget{position:absolute;left:0;right:0;border-top:2px dashed var(--fg);opacity:.45;pointer-events:none}
 .gcenter{position:absolute;left:0;right:0;top:34%;text-align:center;pointer-events:none}
 .gnum{font:700 56px/1 var(--f-num);font-variant-numeric:tabular-nums}
 .gnum small{display:none}
@@ -302,6 +310,10 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <div class="kpi"><div class="label">Range at this pace</div><div class="v" id="proj">—</div><div class="sub" id="projSub">—</div></div>
       <div class="kpi"><div class="label" id="avgLabel">Avg · last 15 mi</div><div class="v" id="avg">—</div><div class="sub" id="avgSub">builds as you drive</div></div>
       <div class="kpi"><div class="label">Power</div><div class="v" id="pw">—</div><div class="sub" id="pwSub">waiting for pack data</div></div>
+    </div>
+    <div class="miles" aria-label="Wh/mi of each recent mile">
+      <div class="mhead"><span class="label">Mile by mile · dashed line = target</span><span class="note" id="mileNow" style="margin:0"></span></div>
+      <div class="mbars" id="mileBars"></div>
     </div>
     <div class="flow" aria-label="Power flow: regen to the left, power used to the right">
       <div class="frow"><span class="fside regen">◀ Regen</span><span class="fstate" id="flowState">—</span><span class="fside use">Using ▶</span></div>
@@ -461,13 +473,13 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v15</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v16</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=15"></script>
-<script src="elm.js?v=15"></script>
-<script src="sim.js?v=15"></script>
-<script src="coach.js?v=15"></script>
-<script src="drives.js?v=15"></script>
-<script src="app.js?v=15"></script>
+<script src="decode.js?v=16"></script>
+<script src="elm.js?v=16"></script>
+<script src="sim.js?v=16"></script>
+<script src="coach.js?v=16"></script>
+<script src="drives.js?v=16"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

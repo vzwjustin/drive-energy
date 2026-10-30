@@ -226,6 +226,7 @@
     $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(basis)} Wh/mi · rated ${fx(L.ratedRangeMi)} mi` : "rated range";
     renderGuide(usable, basis);
     renderGauge(live, tripAvg);
+    renderMiles(app.tgt && app.tgt.whTarget ? Math.round(app.tgt.whTarget) : ratedWh());
     renderScore(tripMi, tripAvg);
     // battery
     const soc = L.socUI ?? L.uiSOC;
@@ -555,7 +556,6 @@
       <path class="zone" d="${arcPath(deg(z2), deg(max), G.r + 14)}" stroke="var(--bad)"/>
       <path class="val" id="gVal" d="${arcPath(G.start, G.start + G.sweep)}" stroke="var(--regen)" stroke-dasharray="0 ${ARC_LEN}"/>
       ${target ? `<line class="tgt" x1="${tx0.toFixed(1)}" y1="${ty0.toFixed(1)}" x2="${tx1.toFixed(1)}" y2="${ty1.toFixed(1)}"/>` : ""}
-      <circle class="avgdot" id="gAvg" r="6" cx="-20" cy="-20"/>
       ${t}`;
     G.built = true;
   }
@@ -577,8 +577,6 @@
     const val = $("gVal");
     val.setAttribute("stroke-dasharray", `${v != null && v > 0 ? ((Math.min(G.max, v) / G.max) * ARC_LEN).toFixed(1) : 0} ${ARC_LEN}`);
     val.setAttribute("stroke", tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : "var(--regen)");
-    const dot = $("gAvg");
-    if (tripAvg > 0) { const [x, y] = polar(gaugeDeg(tripAvg)); dot.setAttribute("cx", x.toFixed(1)); dot.setAttribute("cy", y.toFixed(1)); } else { dot.setAttribute("cx", -20); dot.setAttribute("cy", -20); }
     if (!live) { el.textContent = "—"; el.dataset.tone = ""; $("instSub").textContent = "Wh/mi now"; st.textContent = app.source ? "Waiting for the car" : "Connect the car"; st.dataset.tone = ""; }
     else if (!moving) {
       const kw = app.pEma ?? 0;
@@ -593,6 +591,28 @@
       st.dataset.tone = tone;
     }
     $("effTarget").textContent = target ? `Target ${target} Wh/mi${tg.here ? " (your best at this speed)" : " (rated)"}${tripAvg > 0 ? ` · trip ${Math.round(tripAvg)}` : ""}` : "";
+  }
+
+  // Mile by mile: Wh/mi of each of the last 10 whole miles of this trip plus the mile in progress, colored vs target.
+  function cumAt(t, d) {                      // driving energy at trip distance d, interpolated
+    const D = t.D, E = t.E; if (d <= 0) return 0;
+    let lo = 0, hi = D.length - 1; if (d >= D[hi]) return E[hi];
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D[m] <= d) lo = m; else hi = m; }
+    const f = (d - D[lo]) / (D[hi] - D[lo] || 1); return E[lo] + f * (E[hi] - E[lo]);
+  }
+  function renderMiles(target) {
+    const t = app.trip, box = $("mileBars");
+    if (!t || t.D.length < 3 || t.D[t.D.length - 1] < 0.3) { box.innerHTML = `<span class="note">Each mile shows up here as you drive.</span>`; $("mileNow").textContent = ""; return; }
+    const end = t.D[t.D.length - 1], whole = Math.floor(end), first = Math.max(0, whole - 10), miles = [];
+    for (let k = first; k < whole; k++) miles.push({ k, wh: (cumAt(t, k + 1) - cumAt(t, k)) * 1000 });
+    const part = end - whole; if (part >= 0.2) miles.push({ k: whole, wh: ((cumAt(t, end) - cumAt(t, whole)) * 1000) / part, partial: true });
+    const max = Math.max(target ? target * 1.6 : 400, ...miles.map(m => m.wh));
+    box.innerHTML = miles.map(m => {
+      const tone = !target ? "" : m.wh <= target ? "good" : m.wh <= target * 1.35 ? "warn" : "bad";
+      return `<span class="mb${m.partial ? " partial" : ""}" data-tone="${tone}" title="Mile ${m.k + 1}: ${Math.round(m.wh)} Wh/mi"><i style="height:${Math.max(6, (Math.max(0, m.wh) / max) * 100)}%"></i><b>${Math.round(m.wh)}</b></span>`;
+    }).join("") + (target ? `<span class="mtarget" style="bottom:calc(16px + (100% - 16px) * ${(target / max).toFixed(3)})"></span>` : "");
+    const last = miles.filter(m => !m.partial).slice(-1)[0];
+    $("mileNow").textContent = last ? `last full mile ${Math.round(last.wh)} Wh/mi` : "";
   }
 
   // Efficiency score, 0–100 for this trip: 70% consumption vs rated (100 at ≤85% of rated Wh/mi, 0 at ≥150%),
