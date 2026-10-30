@@ -25,6 +25,8 @@
   // The car's own touchscreen browser (its user agent carries "Tesla/<firmware>"), or ?car to try that layout elsewhere.
   // It has no Web Serial, so the adapter can't connect there: the numbers come from Tessie.
   const inCar = /\bTesla\//.test(navigator.userAgent || "") || /[?&]car\b/.test(location.search || "");
+  // Any browser that can't reach the adapter (the car's, an iPad's in any browser, Firefox) runs from Tessie the same way.
+  const tessieOnly = inCar || !(window.ElmLink && ElmLink.supported());
   let dec = D.createDecoder(), L = dec.state;
   const app = {
     source: null, link: null, port: null, sim: null, simTimer: null,
@@ -41,7 +43,7 @@
   /* ---------------- status ---------------- */
   function status(kind, text) {
     $("chip").dataset.s = kind; $("chipText").textContent = text;
-    const on = app.source === "car" || (inCar && app.source === "tessie");   // connected the way this screen can be
+    const on = app.source === "car" || (tessieOnly && app.source === "tessie");   // connected the way this screen can be
     $("connectBtn").hidden = on;
     $("chooseBtn").hidden = app.source === "car";
     document.body.classList.toggle("offline", !on);
@@ -428,7 +430,7 @@
       if (app.saidKind !== st.headline.kind) { app.saidKind = st.headline.kind; txt("tipSay", st.headline.text); }
       t1Tone = st.headline.kind === "parked" || st.headline.kind === "stopped" ? "idle" : ({ WARN: "bad", GOOD: "good", TIP: "warn" })[st.headline.level];
       t2 = st.second ? st.second.text                // held like the headline (coach.js), so it doesn't flicker
-        : app.source === "tessie" && !inCar && st.headline.kind !== "parked" ? "Pedal and brake coaching need the adapter." : "";
+        : app.source === "tessie" && !tessieOnly && st.headline.kind !== "parked" ? "Pedal and brake coaching need the adapter." : "";
     }
     const sc = C.score();
     set("cScore", sc == null ? "—" : String(sc), sc == null ? "" : "%");
@@ -810,7 +812,7 @@
         txt("gClimL", `Climate${out != null ? ` · ${out}${U.t} out` : ""}`);
         const mph = (cw * 1000) / pace;
         set2("gClim", cw < 0.15 ? `off · 0 ${U.d}/hr` : `${cw.toFixed(1)} kW · −${U.dist(mph).toFixed(1)} ${U.d}/hr`, cw > 3 ? "bad" : cw > 1.5 ? "warn" : "good");
-      } else { txt("gClimL", `Climate${out != null ? ` · ${out}${U.t} out` : ""}`); set2("gClim", app.source === "tessie" && !inCar ? "needs the adapter" : "—", ""); }
+      } else { txt("gClimL", `Climate${out != null ? ` · ${out}${U.t} out` : ""}`); set2("gClim", app.source === "tessie" && !tessieOnly ? "needs the adapter" : "—", ""); }
     }
     // 3. Range goal: energy budget per mile to arrive with the buffer intact. While the car's navigation has a route
     // (Tessie), the goal follows it: the miles left come from the car. A goal set here covers one stretch of driving:
@@ -1045,10 +1047,12 @@
   function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); document.body.classList.toggle("cluster", on || inCar); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) showTab("cockpit"); syncAwake(); }
   $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
   setDrive(!!cfg.drive);
-  // Drive view side by side on a phone on its side, and on the car's screen: wide, but too tall for that media query.
-  const sideMq = window.matchMedia ? matchMedia("(orientation:landscape) and (max-height:540px)") : null;
-  const setSide = () => document.body.classList.toggle("side", inCar || !!(sideMq && sideMq.matches));
-  setSide(); if (sideMq && sideMq.addEventListener) sideMq.addEventListener("change", setSide);
+  // Drive view side by side on a phone on its side, a tablet or computer held wide, and the car's screen. Big numbers, as
+  // on the car's screen, where there's room for them (an iPad on the dash).
+  const mq = q => (window.matchMedia ? matchMedia(q) : null);
+  const sideMq = mq("(orientation:landscape) and (max-height:540px), (orientation:landscape) and (min-width:900px)"), bigMq = mq("(min-width:900px) and (min-height:600px)");
+  const setSide = () => { document.body.classList.toggle("side", inCar || !!(sideMq && sideMq.matches)); document.body.classList.toggle("big", inCar || !!(bigMq && bigMq.matches)); };
+  setSide(); [sideMq, bigMq].forEach(m => m && m.addEventListener && m.addEventListener("change", setSide));
 
   /* ---------------- efficiency gauge + power flow ----------------
      Gauge: smoothed Wh/mi right now on a 240° arc. Green up to your target for this speed (your own
@@ -1506,7 +1510,7 @@
   /* ---------------- controls ---------------- */
   // Wrapped: passing connectCar directly would hand it the click event as its "auto" argument (the v21 bug:
   // a tap was treated as a silent background attempt, so the adapter picker never opened).
-  $("connectBtn").addEventListener("click", () => (inCar ? startTessie() : connectCar(false, false)));
+  $("connectBtn").addEventListener("click", () => (tessieOnly ? startTessie() : connectCar(false, false)));
   $("chooseBtn").addEventListener("click", () => connectCar(false, true));
   $("demoBtn").addEventListener("click", () => (app.source === "demo" ? disconnect() : startDemo()));
   $("disconnectBtn").addEventListener("click", disconnect);
@@ -1567,9 +1571,11 @@
   syncSeg();
   status("off", "Not connected");
   // On the car's screen Connect car means Tessie, and it starts on its own (asking for the token in Setup if there's none).
-  document.body.classList.toggle("car", inCar);
-  if (inCar) { $("connectBtn").querySelector("use")?.setAttribute("href", "#i-cloud"); startTessie(); }
-  else if (!window.ElmLink || !ElmLink.supported()) notice("Live car data needs Chrome 138+ on Android (or desktop Chrome) over https://. Demo works anywhere.", "info");
+  // Other browsers without Web Serial (an iPad on the dash) do the same once a token is saved.
+  document.body.classList.toggle("car", inCar); document.body.classList.toggle("tessieonly", tessieOnly);
+  if (tessieOnly) $("connectBtn").querySelector("use")?.setAttribute("href", "#i-cloud");
+  if (inCar || (tessieOnly && tessieToken())) startTessie();
+  else if (tessieOnly) notice("This browser can't reach the adapter (that needs Chrome on Android or a computer): Connect car uses Tessie. Demo works anywhere.", "info");
   // Service worker: check for a new version on every load and switch to it right away (one automatic reload).
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").then(r => r.update()).catch(() => {});

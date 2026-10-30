@@ -130,7 +130,8 @@ Everything below is driven by **your car's own steady-cruise data** (the coach's
   - **Arrival:** with a route in the car's navigation (Tessie) or a Range goal, the charge you'd arrive with at your current pace (amber under 20%, red under 10%), the car's own estimate beside it, and the destination, miles to go and arrival time. The car's figure assumes typical driving; yours uses how you're actually driving. The destination stays on the device and is masked in Copy diagnostics.
   - **Warnings stand out:** a cold-pack, hot-pack or low-charge warning turns the tip red, bigger, with a ⚠.
   - **Regen limited:** while the car holds regen under 40 kW (cold or nearly full pack; adapter only), that chip takes the Range vs rated slot, with the reason.
-  - On a phone mounted sideways, and on the car's screen, the efficiency dial sits on the left, the Charge block in the middle and the speed dial on the right, with the tip above and the accelerator and guide below. A phone held upright shows the speed dial only, with the Charge block under it. The car's screen gets bigger numbers.
+  - On a phone mounted sideways, a tablet or computer held wide (900 px or more), and the car's screen, the efficiency dial sits on the left, the Charge block in the middle and the speed dial on the right, with the tip above and the accelerator and guide below. A phone held upright shows the speed dial only, with the Charge block under it.
+  - Screens with room (900 × 600 or more: an iPad on its side, the car's screen) get the car's bigger numbers, and the cluster fills the whole screen: the dials grow with its height and the guide sits at the bottom edge. Checked to fit without scrolling from an iPad mini in Safari (about 1133 × 670 visible) up to a 13-inch iPad.
 
 ## Range coach
 
@@ -182,6 +183,15 @@ Open the same address in the car's browser. The screen runs from Tessie there (a
 - Hidden there, since they need the adapter: the accelerator card, where the energy went, the speed curve, the brick heatmap, and the adapter settings. Drives are scored from Tessie and kept in the car's browser.
 - Buttons and tabs get bigger touch targets. Dark by default (**Setup → Theme** to change). The Cockpit shows the cluster dials (see Drive view), and Drive view lays them out side by side.
 - Not yet checked on a real car: whether this firmware's browser runs the page (it needs a recent Chromium) and whether it stays usable while driving.
+
+## On an iPad (as a dash display)
+
+Every iPad browser (Safari, Chrome, Firefox) runs on Apple's WebKit engine, which has no Web Serial or Bluetooth, so an iPad can't reach the adapter either: like the car's screen, it runs from Tessie. The same goes for any browser without Web Serial (Firefox on a computer, for one).
+
+- Paste the Tessie token in **Setup** once; after that Tessie starts on its own when the page opens, and **Connect car** means Tessie. Without a token the app says so and Demo still works.
+- The adapter-only parts are hidden, as on the car's screen.
+- Turn the iPad on its side and tap **Drive view** for the full cluster. For the whole screen with no browser bars, use **Share → Add to Home Screen** and open it from there. **Setup → Theme → Dark** keeps it dark in daylight too.
+- Drive view asks to keep the screen on; if the iPad still dims, set **Settings → Display & Brightness → Auto-Lock → Never** while it's mounted.
 
 ## Auto-connect (v21)
 

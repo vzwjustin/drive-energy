@@ -336,11 +336,12 @@ body.drive.side .pedal{grid-area:pedal;padding:8px 12px}
 body.drive.side .guide{grid-area:guide;gap:8px} body.drive.side .gchip{padding:6px 10px}
 body.drive.side .gnum{font-size:52px} body.drive.side .tip{font-size:17px} body.drive.side .gval{font-size:13px}
 body.drive.side .pscale, body.drive.side .fticks, body.drive.side .goalform{display:none!important}
-/* Car touchscreen (the Tesla browser): Tessie only, so the adapter-only parts go; bigger touch targets at arm's length */
-body.car .needs-adapter{display:none!important}
-body.car.drive.side .gnum{font-size:76px} body.car.drive.side .gnum[data-word="true"]{font-size:46px} body.car.drive.side .gunit{font-size:16px}
-body.car.drive.side .tip{font-size:24px} body.car.drive.side .tip2{font-size:18px}
-body.car.drive.side .kpi .v{font-size:30px} body.car.drive.side .kpi .label{font-size:13px} body.car.drive.side .gval{font-size:16px}
+/* Browsers that can't reach the adapter (the car's, an iPad's) run from Tessie, so the adapter-only parts go. Big: the
+   car's screen, or a tablet or computer with room, gets bigger numbers; the car also gets bigger touch targets. */
+body.tessieonly .needs-adapter{display:none!important}
+body.big.drive.side .gnum{font-size:76px} body.big.drive.side .gnum[data-word="true"]{font-size:46px} body.big.drive.side .gunit{font-size:16px}
+body.big.drive.side .tip{font-size:24px} body.big.drive.side .tip2{font-size:18px}
+body.big.drive.side .kpi .v{font-size:30px} body.big.drive.side .kpi .label{font-size:13px} body.big.drive.side .gval{font-size:16px}
 body.car .btn, body.car .tab{min-height:48px} body.car .seg button{min-height:44px;min-width:60px}
 /* Cluster (Drive view and the car's screen): needle dials. The efficiency gauge gets ticks and a needle, its number below
    the hub; a speed dial with a power needle (regen left of zero) stands in for the power bar. app.js sets .cluster. */
@@ -366,8 +367,8 @@ body.cluster.drive.side .sdial{grid-area:sdial;max-width:none;align-self:center}
 body.cluster.drive.side .kpis{grid-template-columns:minmax(0,1fr);align-self:center}
 body.cluster.drive.side .gaugewrap, body.cluster.drive.side .sdial{width:min(100%,calc((100dvh - 200px) * 1.1));justify-self:center}
 body.cluster.drive.side .gaugewrap .gnum{font-size:30px} body.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:22px} body.cluster.drive.side .sspd{font-size:40px}
-body.car.cluster.drive.side .gaugewrap .gnum{font-size:56px} body.car.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:34px}
-body.car.cluster .sspd, body.car.cluster.drive.side .sspd{font-size:72px} body.car.cluster .seff{font-size:24px}
+body.big.cluster.drive.side .gaugewrap .gnum{font-size:56px} body.big.cluster.drive.side .gaugewrap .gnum[data-word="true"]{font-size:34px}
+body.big.cluster .sspd, body.big.cluster.drive.side .sspd{font-size:72px} body.big.cluster .seff{font-size:24px}
 /* Drive view extras: a status strip like a cluster's (gear, time, outside temperature), a Charge block that stands out
    (charge, range, this drive) in place of the tiles, a red banner for warnings. */
 .dstrip, .dhero{display:none}
@@ -396,14 +397,21 @@ body.drive .dhero{display:block;background:var(--surface);border:1px solid var(-
 .dscore>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dscore b{font:700 20px var(--f-num)} .dscore b[data-tone="good"]{color:var(--regen)} .dscore b[data-tone="warn"]{color:var(--warn)} .dscore b[data-tone="bad"]{color:var(--bad)}
 body.cluster.drive.side .dhero{grid-area:kpis;align-self:center} body.cluster.drive:not(.side) .dhero{grid-column:1/-1}
-body.cluster.drive.side:not(.car) #view-cockpit{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr)}
+body.cluster.drive.side:not(.big) #view-cockpit{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr)}
+/* A big screen held wide (an iPad on the dash, the car's): the cluster fills it. The dials grow with the height, the
+   guide sits at the bottom edge. */
+body.big.drive.side{display:flex;flex-direction:column;min-height:100dvh}
+body.big.drive.side .wrap{flex:1 0 auto;width:100%;max-width:1600px;padding-bottom:max(8px,env(safe-area-inset-bottom))} body.big.drive.side .top .in{max-width:1600px}
+body.big.drive.side #view-cockpit{flex:1 0 auto;grid-template-rows:auto 1fr auto auto}
+body.big.cluster.drive.side #view-cockpit{grid-template-columns:minmax(0,1fr) minmax(300px,.7fr) minmax(0,1fr)}
+body.big.cluster.drive.side .gaugewrap, body.big.cluster.drive.side .sdial{width:min(100%,calc((100dvh - 350px) * 1.2))}
 @media (max-width:640px){body.drive .dstrip{gap:10px;font-size:13px;margin-left:6px}}
-body.car.drive .dstrip{font-size:18px;gap:22px} body.car.drive .dpct{font-size:60px} body.car.drive .drng #dRng{font-size:34px}
-body.car.drive .dthis b{font-size:22px} body.car.drive .dapct{font-size:38px} body.car.drive .dsub{font-size:15px}
+body.big.drive .dstrip{font-size:18px;gap:22px} body.big.drive .dpct{font-size:60px} body.big.drive .drng #dRng{font-size:34px}
+body.big.drive .dthis b{font-size:22px} body.big.drive .dapct{font-size:38px} body.big.drive .dsub{font-size:15px}
 body.drive .coach[data-tone="bad"]{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 13%,var(--surface))}
 body.drive .coach[data-tone="bad"] .tip::before{content:"⚠ "}
 body.drive .coach[data-tone="bad"] .tip{color:var(--bad);font-size:22px} body.drive.side .coach[data-tone="bad"] .tip{font-size:19px}
-body.car.drive.side .coach[data-tone="bad"] .tip{font-size:27px}
+body.big.drive.side .coach[data-tone="bad"] .tip{font-size:27px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -764,15 +772,15 @@ body.car.drive.side .coach[data-tone="bad"] .tip{font-size:27px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v41</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v42</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=41"></script>
-<script src="elm.js?v=41"></script>
-<script src="sim.js?v=41"></script>
-<script src="units.js?v=41"></script>
-<script src="coach.js?v=41"></script>
-<script src="drives.js?v=41"></script>
-<script src="stops.js?v=41"></script>
-<script src="app.js?v=41"></script>
+<script src="decode.js?v=42"></script>
+<script src="elm.js?v=42"></script>
+<script src="sim.js?v=42"></script>
+<script src="units.js?v=42"></script>
+<script src="coach.js?v=42"></script>
+<script src="drives.js?v=42"></script>
+<script src="stops.js?v=42"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>

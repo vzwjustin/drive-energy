@@ -7,7 +7,10 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 // Minimal page: every element accepts writes; click(id) runs the element's click handler, fire(type) a document event.
 // scale speeds up the app's own timers (scale 20: Tessie's 10 s poll runs every 0.5 s).
 // storage may be a plain object or the Map from an earlier boot (a reload).
-function boot({ storage = {}, serial = null, fetch = null, scale = 1, wakeLock = null, idb = null, ua = "", vibrate = null } = {}) {
+// serial: a fake adapter (fakeSerial), or false for a browser without Web Serial (the car's, an iPad's); by default Chrome
+// with none granted.
+const noPorts = { getPorts: async () => [], requestPort: async () => { throw Object.assign(new Error("No port selected by the user."), { name: "NotFoundError" }); }, addEventListener() {} };
+function boot({ storage = {}, serial = noPorts, fetch = null, scale = 1, wakeLock = null, idb = null, ua = "", vibrate = null } = {}) {
   const els = {}, timers = [], docOn = {}, files = [];
   let reloads = 0;
   const el = () => ({ dataset: {}, style: { setProperty() {} }, classList: { s: new Set(), toggle(c, on = !this.s.has(c)) { this.s[on ? "add" : "delete"](c); return on; }, contains(c) { return this.s.has(c); } }, children: [{ style: {} }, { style: {} }],
@@ -688,6 +691,23 @@ const test = async (name, fn) => {
     assert.ok(/^To Home · 3\d\.\d mi left$/.test(app.text("gGoalL")) && /^On budget · arrive ~5\d%$/.test(app.text("gGoalV")), app.text("gGoalL") + " | " + app.text("gGoalV"));
     tes.car.route = null; await wait(1300);
     assert.deepStrictEqual([app.el("dArrW").hidden, app.text("gGoalL")], [true, "Range goal"], "the route ended");
+    app.stop();
+  });
+
+  await test("a browser without Web Serial (an iPad): runs from Tessie like the car's screen, on its own once a token is saved", async () => {
+    const ipadUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+    const fresh = boot({ serial: false, ua: ipadUA }); await wait(50);
+    assert.ok(fresh.document.body.classList.contains("tessieonly") && !fresh.document.body.classList.contains("car"));
+    assert.ok(/can't reach the adapter.*Connect car uses Tessie/.test(fresh.text("noticeText")), fresh.text("noticeText"));
+    fresh.click("connectBtn"); await wait(50);
+    assert.ok(/Paste your Tessie API token/.test(fresh.text("noticeText")), "Connect car means Tessie: " + fresh.text("noticeText"));
+    fresh.stop();
+    const tes = fakeTessie(); Object.assign(tes.car, { speed: 50, gear: "D", power: 15 });
+    const app = boot({ serial: false, ua: ipadUA, storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    await wait(1300);
+    assert.ok(/^Tessie/.test(app.text("chipText")), "started on its own: " + app.text("chipText"));
+    assert.strictEqual(app.el("connectBtn").hidden, true, "connected the way this screen can be");
+    assert.notStrictEqual(app.text("tip2"), "Pedal and brake coaching need the adapter.", "no adapter to suggest here");
     app.stop();
   });
 
