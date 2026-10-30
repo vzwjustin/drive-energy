@@ -137,4 +137,14 @@ t("drives: habit picks the biggest issue", () => {
   assert.strictEqual(Dr.habit({ friction: 0, heavy: 0, pedalPct: 85, vsRatedPct: -3 }).tone, "good");
 });
 
+t("stops: regen capture of a slowdown from 50 to 0 mph", () => {
+  const S = require("../stops.js"), st = S.createStops();
+  let out = null, mph = 50;
+  for (let i = 0; i < 5; i++) st.update({ mph, kw: 10 }, 1);                  // cruising
+  const k = S.kineticKWh(50, 0);
+  for (let i = 0; i < 50; i++) { mph = Math.max(0, mph - 1); out = st.update({ mph, kw: -(0.65 * k * 3600) / 50, brake: false }, 1) || out; }
+  assert.ok(out && out.stop); assert.ok(Math.abs(out.pct - 65) <= 2, "capture " + out.pct); assert.strictEqual(out.tone, "good");
+  assert.ok(Math.abs(st.avg() - 65) <= 2);
+});
+
 console.log(`\n${pass} passed`);

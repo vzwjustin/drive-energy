@@ -13,6 +13,7 @@
 
   // The single most useful habit to work on next, from what this drive actually measured.
   function habit(d) {
+    if (d.capturePct != null && d.stops >= 3 && d.capturePct < 40) return { tone: "warn", text: `Slowdowns recovered only ${d.capturePct}% of your momentum through regen. Lift off sooner and let the car slow itself; aim for 60%+.` };
     if (d.friction >= 3) return { tone: "warn", text: `Lift off earlier: ${d.friction} slowdowns used the brake with little regen. Coasting into stops keeps that energy.` };
     const used = (d.accelKWh || 0) + (d.cruiseKWh || 0);
     if (used > 0.2 && d.accelKWh / used > 0.3) return { tone: "warn", text: `Speeding up took ${Math.round((d.accelKWh / used) * 100)}% of the driving energy. Build speed gradually and lift early so you don't brake away what you spent.` };
@@ -29,7 +30,7 @@
   function createDrives({ load, save } = {}) {
     const s = { cur: null, stoppedFor: 0, history: (load && load()) || [], persist: true };
 
-    function snap(x) { return { odo: x.odo, drive: x.drive, park: x.park, regen: x.regen, climate: x.climateKWh, accel: x.accelKWh ?? 0, cruise: x.cruiseKWh ?? 0, heavy: x.heavy, friction: x.friction, pressed: x.pressedSec, right: x.rightSec }; }
+    function snap(x) { return { odo: x.odo, drive: x.drive, park: x.park, regen: x.regen, climate: x.climateKWh, accel: x.accelKWh ?? 0, cruise: x.cruiseKWh ?? 0, kin: x.stopKinetic ?? 0, rgn: x.stopRegen ?? 0, stops: x.stopCount ?? 0, heavy: x.heavy, friction: x.friction, pressed: x.pressedSec, right: x.rightSec }; }
 
     function finish(x, now) {
       const c = s.cur, a = c.start, b = snap(x); s.cur = null; s.stoppedFor = 0;
@@ -46,6 +47,7 @@
         regenKWh: b.regen - a.regen, parkKWh: b.park - a.park,
         climateKWh: a.climate != null && b.climate != null ? b.climate - a.climate : null,
         accelKWh: b.accel - a.accel, cruiseKWh: b.cruise - a.cruise,
+        stops: b.stops - a.stops, capturePct: b.kin - a.kin > 0.01 ? Math.round(((b.rgn - a.rgn) / (b.kin - a.kin)) * 100) : null,
         avgMph: c.movingSec > 0 ? (mi / c.movingSec) * 3600 : null, maxMph: c.maxMph,
         cruiseBand: best > 60 ? cruiseBand : null, sweetBand: x.sweetBand ?? null, outsideC: x.outsideC ?? null, demo: !!x.demo,
       };

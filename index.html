@@ -378,6 +378,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
           <div><div class="label">Road grade</div><div class="v" id="cGrade">—</div></div>
           <div><div class="label">Heavy pedal</div><div class="v" id="cHard">0</div></div>
           <div><div class="label">Braking, little regen</div><div class="v" id="cBrake">0</div></div>
+          <div style="grid-column:1/-1"><div class="label">Slowdown capture (regen ÷ momentum lost)</div><div class="v" id="cCap">—</div><div class="sub" id="cCapSub" style="font-size:12px;color:var(--muted)">slowdowns from 15+ mph</div></div>
         </div>
         <button class="btn toggle" id="cruiseBtn" type="button" aria-pressed="false">Cruise / Autopilot on</button>
         <div class="label" style="margin-top:16px">Your speed vs Wh/mi <span id="tempBand" style="text-transform:none;letter-spacing:0"></span></div>
@@ -473,13 +474,14 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     <div class="sheet"><div id="sumBody"></div><div class="btns" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </div>
 
-  <footer><span id="ver">v16</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v17</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </div>
-<script src="decode.js?v=16"></script>
-<script src="elm.js?v=16"></script>
-<script src="sim.js?v=16"></script>
-<script src="coach.js?v=16"></script>
-<script src="drives.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="decode.js?v=17"></script>
+<script src="elm.js?v=17"></script>
+<script src="sim.js?v=17"></script>
+<script src="coach.js?v=17"></script>
+<script src="drives.js?v=17"></script>
+<script src="stops.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

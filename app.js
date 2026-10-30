@@ -27,6 +27,7 @@
     idStats: {}, rawLines: [], bufferFull: 0,
   };
   const drives = Drives.createDrives({ load: () => load(KEY.drives, []), save: h => store(KEY.drives, h) });
+  const stops = Stops.createStops();
   const realCoach = Coach.createCoach({ loadBuckets: () => load(KEY.speed, {}), saveBuckets: b => store(KEY.speed, b) });
   app.coach = realCoach;
 
@@ -128,7 +129,7 @@
     if (app.source === "demo") { app.trip = app.savedTrip ?? load(KEY.trip, null); app.source = null; notice(null); }
     app.coach = realCoach;
   }
-  function resetDecoder() { drives.cancel(); app.climateKWh = 0; dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
+  function resetDecoder() { drives.cancel(); stops.reset(); app.climateKWh = 0; dec = D.createDecoder(); L = dec.state; app.pEma = null; app.synthNet = 0; app.synthOdo = 0; app.idStats = {}; app.rawLines = []; app.bufferFull = 0; }
 
   /* ---------------- trip + consumption math ----------------
      Energy: lifetime counters on 0x3D2 (kWh out minus kWh in) — exact to 1 Wh, regen included.
@@ -165,7 +166,11 @@
       tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
     }, app.source === "demo" ? dt * DEMO_SPEED : dt, app.source === "demo" ? (app.simNow = (app.simNow || 0) + dt * DEMO_SPEED * 1000) : now);
     const dtSim = app.source === "demo" ? dt * DEMO_SPEED : dt;
-    if (live && (app.source === "car" || app.source === "demo")) checkAlerts(now);
+    if (live && (app.source === "car" || app.source === "demo")) {
+      checkAlerts(now);
+      const sd = stops.update({ mph: L.speedMph, kw: app.pEma, brake: L.brakeOn, pedal: L.pedalPct }, dtSim);
+      if (sd) { app.lastStopAt = now; }
+    }
     if (L.compressorKW != null) app.climateKWh = (app.climateKWh || 0) + (L.compressorKW * dtSim) / 3600;
     // Where the energy went: integrate pack power into cruising / speeding up / climate / parked, plus regen recovered.
     if (live && app.trip && app.pEma != null && app.source !== "tessie") {
@@ -187,6 +192,7 @@
         odo, mph: L.speedMph, gear: L.gear, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen,
         climateKWh: L.compressorKW != null ? app.climateKWh : null, heavy: st.heavyEvents, friction: st.frictionEvents,
         accelKWh: app.trip.eb ? app.trip.eb.accel : 0, cruiseKWh: app.trip.eb ? app.trip.eb.cruise : 0,
+        stopKinetic: stops.state.kinetic, stopRegen: stops.state.regen, stopCount: stops.state.n,
         pressedSec: st.pressedSec, rightSec: st.rightSec, rated: ratedWh(), sweetBand: sw ? sw.mph : null, outsideC: L.outsideC, demo: app.source === "demo",
       }, dtSim, Date.now());
       if (done) { showSummary(done); renderDrives(); }
@@ -280,6 +286,13 @@
     $("cHard").textContent = String(st.heavyEvents); $("cBrake").textContent = String(st.frictionEvents);
     set("cGrade", L.gradePct == null ? "—" : `${L.gradePct > 0 ? "+" : ""}${L.gradePct}`, L.gradePct == null ? "" : "%");
     $("cruiseBtn").setAttribute("aria-pressed", String(st.cruiseOn));
+    const avgCap = stops.avg(), ls = stops.state.last;
+    set("cCap", avgCap == null ? "—" : String(avgCap), avgCap == null ? "" : "%");
+    $("cCap").dataset.tone = avgCap == null ? "" : Stops.grade(avgCap);
+    $("cCapSub").textContent = ls ? `last: ${ls.v0}→${ls.v1} mph, ${ls.pct}%${ls.braked ? " (brake used)" : ""}` : "slowdowns from 15+ mph";
+    // Right after a slowdown, show its result in the second coaching line for 8 s.
+    if (ls && app.lastStopAt && performance.now() - app.lastStopAt < 8000 / (app.source === "demo" ? DEMO_SPEED : 1) && app.source)
+      $("tip2").textContent = `That slowdown recovered ${ls.pct}% of your momentum${ls.pct >= 60 ? ". Excellent." : ls.pct >= 40 ? ". Lift a bit earlier for more." : ". Lift much earlier, less brake."}`;
     const { rows, sweet, band } = C.table(L.outsideC), box = $("speedTable");
     $("tempBand").textContent = band === "x" ? "" : `at ${band} °F outside`;
     if (!rows.length) { box.innerHTML = `<p class="note">Fills in as you cruise steadily above 20 mph. Each 5-mph band needs about half a mile${band === "x" ? "" : " at this outside temperature"}.</p>`; return; }
@@ -707,6 +720,7 @@
         ${cell("Range vs rated", d.rangeDeltaMi == null ? "—" : `${signed(d.rangeDeltaMi)} mi`, "on this drive")}
         ${cell("Energy", `${d.kwh.toFixed(2)} kWh`, `${d.regenKWh.toFixed(2)} kWh back from regen`)}
         ${cell("Pedal in range", d.pedalPct == null ? "—" : `${d.pedalPct}%`, `${d.heavy} heavy · ${d.friction} brake-heavy stops`)}
+        ${cell("Slowdown capture", d.capturePct == null ? "—" : `${d.capturePct}%`, d.stops ? `${d.stops} slowdowns · 60%+ is great` : "")}
         ${cell("Speeding up", d.accelKWh != null && d.accelKWh + d.cruiseKWh > 0 ? `${Math.round((d.accelKWh / (d.accelKWh + d.cruiseKWh)) * 100)}%` : "—", "of driving energy")}
         ${cell("Climate", d.climateKWh == null ? "—" : `${d.climateKWh.toFixed(2)} kWh`, d.climateKWh != null && d.kwh > 0 ? `${Math.round((d.climateKWh / d.kwh) * 100)}% of energy` : "")}
       </div>
@@ -771,6 +785,7 @@
     const st = app.coach.state, sw = app.coach.table(L.outsideC).sweet;
     const d = drives.finish({ odo: L.odoMi ?? app.synthOdo, drive: app.trip.drive, park: app.trip.park, regen: app.trip.regen, climateKWh: L.compressorKW != null ? app.climateKWh : null,
       accelKWh: app.trip.eb ? app.trip.eb.accel : 0, cruiseKWh: app.trip.eb ? app.trip.eb.cruise : 0,
+      stopKinetic: stops.state.kinetic, stopRegen: stops.state.regen, stopCount: stops.state.n,
       heavy: st.heavyEvents, friction: st.frictionEvents, pressedSec: st.pressedSec, rightSec: st.rightSec, rated: ratedWh(), sweetBand: sw ? sw.mph : null, outsideC: L.outsideC, demo: app.source === "demo" }, Date.now());
     if (d) showSummary(d); else notice("That drive was under 0.3 mi, so there's nothing to summarize.", "info");
     renderDrives();
@@ -842,7 +857,7 @@
   $("connectBtn").addEventListener("click", connectCar);
   $("demoBtn").addEventListener("click", () => (app.source === "demo" ? disconnect() : startDemo()));
   $("disconnectBtn").addEventListener("click", disconnect);
-  $("resetTrip").addEventListener("click", () => { app.trip = null; drives.cancel(); app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
+  $("resetTrip").addEventListener("click", () => { app.trip = null; drives.cancel(); stops.reset(); app.coach.resetTrip(); if (app.source !== "demo") store(tripKey(app.source === "tessie" ? "tessie" : "car"), null); render(false); });
   $("tessieBtn").addEventListener("click", () => (app.source === "tessie" ? disconnect() : startTessie()));
   $("cfgTok").value = tessieToken() ? "••••••••" : "";
   $("cfgTok").addEventListener("change", e => { const v = e.target.value.trim(); if (!v || /^•+$/.test(v)) return; try { localStorage.setItem(KEY.tok, v); } catch (err) {} e.target.value = "••••••••"; notice("Tessie token saved on this device only.", "info"); });
