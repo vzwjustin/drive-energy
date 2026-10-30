@@ -76,7 +76,7 @@ function fakeSerial(...ports) {
 // car: readings a test can change between polls (full: null leaves out the full-pack figure); car.idles is the parked-stretch log. Commands (POSTs) are recorded in cmds; one named in refuse gets
 // { result: false, reason } back, the rest succeed.
 function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
-  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, full: 75, outside: 25, setC: 21, climateOn: false, speed: 0, gear: null, power: 0, charge: {}, idles: [] };
+  const calls = [], cmds = [], refuse = {}, car = { odometer: 10000, energy: 50, level: 66, full: 75, outside: 25, setC: 21, climateOn: false, speed: 0, gear: null, power: 0, charge: {}, idles: [], route: null };
   const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (failFirst && calls.length === 1) throw new TypeError("Failed to fetch");
@@ -87,7 +87,7 @@ function fakeTessie({ failFirst = false, cars = [{ vin: "VIN1" }] } = {}) {
     const body = /vehicles/.test(url) ? { results: cars }
       : /idles/.test(url) ? { results: car.idles }
       : /battery/.test(url) ? { pack_voltage: 350, pack_current: 1, energy_remaining: car.energy, ...(car.full != null && { nominal_full_pack_energy: car.full }), battery_level: car.level, battery_range: 200, timestamp: Date.now() / 1000 }
-      : { state: "online", drive_state: { power: car.power, speed: car.speed, shift_state: car.gear }, vehicle_state: { odometer: car.odometer }, charge_state: car.charge,
+      : { state: "online", drive_state: { power: car.power, speed: car.speed, shift_state: car.gear, ...car.route }, vehicle_state: { odometer: car.odometer }, charge_state: car.charge,
           climate_state: { outside_temp: car.outside, driver_temp_setting: car.setC, is_climate_on: car.climateOn } };
     return { ok: true, status: 200, json: async () => body };
   };
@@ -670,6 +670,24 @@ const test = async (name, fn) => {
     assert.ok(/^\d+$/.test(app.text("dScore")), app.text("dScore"));
     tes.car.gear = "P"; tes.car.speed = 0; await wait(1300);
     assert.strictEqual(app.el("dGear").dataset.g, "P");
+    app.stop();
+  });
+
+  await test("Drive view: a route in the car's navigation shows the arrival charge at your pace beside the car's; the goal follows it (Tessie)", async () => {
+    const tes = fakeTessie();
+    Object.assign(tes.car, { speed: 60, gear: "D", power: 20, route: { active_route_destination: "Home, 1 Main St", active_route_miles_to_arrival: 40,
+      active_route_minutes_to_arrival: 35, active_route_energy_at_arrival: 31, active_route_traffic_minutes_delay: 0 } });
+    const app = boot({ storage: { "de.tessie.v1": "tok" }, fetch: tes.fetch, scale: 20 });
+    app.click("tessieBtn"); app.click("driveBtn");
+    for (let i = 0; i < 6; i++) { await wait(500); tes.car.odometer += 0.5; tes.car.energy -= 0.15; tes.car.route.active_route_miles_to_arrival -= 0.5; }
+    assert.strictEqual(app.el("dArrW").hidden, false);
+    // ~49 kWh left of 75, 37 mi to go at 300 Wh/mi: about 51% on arrival
+    assert.ok(/^5\d%$/.test(app.text("dArrPct")) && app.el("dArrPct").dataset.tone === "good", app.text("dArrPct"));
+    assert.strictEqual(app.text("dArrSub"), "at your pace · car says 31%");
+    assert.ok(/^Home · 3\d\.\d mi to go · \d{1,2}:\d{2}/.test(app.text("dArrTo")), app.text("dArrTo"));
+    assert.ok(/^To Home · 3\d\.\d mi left$/.test(app.text("gGoalL")) && /^On budget · arrive ~5\d%$/.test(app.text("gGoalV")), app.text("gGoalL") + " | " + app.text("gGoalV"));
+    tes.car.route = null; await wait(1300);
+    assert.deepStrictEqual([app.el("dArrW").hidden, app.text("gGoalL")], [true, "Range goal"], "the route ended");
     app.stop();
   });
 

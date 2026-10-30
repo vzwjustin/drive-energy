@@ -386,6 +386,8 @@ body.drive .dhero{display:block;background:var(--surface);border:1px solid var(-
 .dbar i{display:block;height:100%;width:0;border-radius:5px;background:var(--regen);transition:width .5s}
 .dbar i[data-tone="warn"]{background:var(--warn)} .dbar i[data-tone="bad"]{background:var(--bad)}
 .drng #dRng{font:700 27px/1.1 var(--f-num)}
+.darrw{margin-top:10px} .darrw .dsoc{row-gap:2px} .dapct{font:700 30px/1.1 var(--f-num)} .dto{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dapct[data-tone="good"]{color:var(--regen)} .dapct[data-tone="warn"]{color:var(--warn)} .dapct[data-tone="bad"]{color:var(--bad)}
 .dthis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:4px}
 .dhero{container-type:inline-size} @container (max-width:220px){.dthis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .dthis div{background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:6px 8px;min-width:0}
@@ -397,7 +399,7 @@ body.cluster.drive.side .dhero{grid-area:kpis;align-self:center} body.cluster.dr
 body.cluster.drive.side:not(.car) #view-cockpit{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr)}
 @media (max-width:640px){body.drive .dstrip{gap:10px;font-size:13px;margin-left:6px}}
 body.car.drive .dstrip{font-size:18px;gap:22px} body.car.drive .dpct{font-size:60px} body.car.drive .drng #dRng{font-size:34px}
-body.car.drive .dthis b{font-size:22px} body.car.drive .dsub{font-size:15px}
+body.car.drive .dthis b{font-size:22px} body.car.drive .dapct{font-size:38px} body.car.drive .dsub{font-size:15px}
 body.drive .coach[data-tone="bad"]{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 13%,var(--surface))}
 body.drive .coach[data-tone="bad"] .tip::before{content:"⚠ "}
 body.drive .coach[data-tone="bad"] .tip{color:var(--bad);font-size:22px} body.drive.side .coach[data-tone="bad"] .tip{font-size:19px}
@@ -500,6 +502,11 @@ body.car.drive.side .coach[data-tone="bad"] .tip{font-size:27px}
             <div class="dbar"><i id="dBar"></i></div>
             <div class="drng"><span id="dRng">—</span> <span class="dsub" id="dRngL">at this pace</span></div>
             <div class="dsub"><span id="dRngSub"></span><span class="dvs" id="dVs"></span></div>
+            <div class="darrw" id="dArrW" hidden>
+              <div class="dlab">Arrival</div>
+              <div class="dsoc"><span class="dapct" id="dArrPct">—</span><span class="dsub" id="dArrSub"></span></div>
+              <div class="dsub dto" id="dArrTo"></div>
+            </div>
             <div class="dlab">This drive</div>
             <div class="dthis">
               <div><b id="dMi">—</b><span id="dMiU">mi</span></div><div><b id="dMin">—</b><span>min</span></div>
@@ -757,15 +764,15 @@ body.car.drive.side .coach[data-tone="bad"] .tip{font-size:27px}
     <div class="sheet"><div id="sumBody"></div><div class="btnrow" style="justify-content:flex-end;margin-top:14px"><button class="btn danger" id="sumDelete" type="button" hidden>Delete drive</button><button class="btn primary" id="sumDone" type="button">Done</button></div></div>
   </dialog>
 
-  <footer><span id="ver">v39</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
+  <footer><span id="ver">v40</span><span id="adapter">Listen-only · nothing is sent to the car's CAN bus</span><span id="fps"></span></footer>
 </main>
-<script src="decode.js?v=39"></script>
-<script src="elm.js?v=39"></script>
-<script src="sim.js?v=39"></script>
-<script src="units.js?v=39"></script>
-<script src="coach.js?v=39"></script>
-<script src="drives.js?v=39"></script>
-<script src="stops.js?v=39"></script>
-<script src="app.js?v=39"></script>
+<script src="decode.js?v=40"></script>
+<script src="elm.js?v=40"></script>
+<script src="sim.js?v=40"></script>
+<script src="units.js?v=40"></script>
+<script src="coach.js?v=40"></script>
+<script src="drives.js?v=40"></script>
+<script src="stops.js?v=40"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>

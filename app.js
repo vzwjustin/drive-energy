@@ -393,6 +393,17 @@
     txt("dRng", mi != null ? `${fx(U.dist(mi))} ${U.d}` : "—"); txt("dRngL", pace ? "at this pace" : "rated");
     txt("dRngSub", chg ? [`Charging ${kwTxt(chg.kw)} kW`, chgEta(chg)].filter(Boolean).join(" · ") : d != null ? `rated ${fx(U.dist(L.ratedRangeMi))} ${U.d} · ` : "");
     txt("dVs", !chg && d != null ? `${d >= 0 ? "+" : "−"}${Math.abs(Math.round(U.dist(d)))} ${U.d} vs rated` : ""); setTone("dVs", d == null ? "" : d >= 0 ? "good" : d > -15 ? "warn" : "bad");   // as the Range vs rated chip
+    // Arrival, with a route in the car's navigation or a Range goal: the charge you'd arrive with at this pace, and the
+    // car's own figure beside it (it doesn't know how you drive).
+    const a = app.goal, rt = a && a.rt;
+    hide("dArrW", !a);
+    if (a) {
+      const pct = a.arrive ?? (rt ? rt.pct : null);
+      txt("dArrPct", pct == null ? "—" : `${Math.round(pct)}%`); setTone("dArrPct", pct == null ? "" : pct < 10 ? "bad" : pct < 20 ? "warn" : "good");
+      txt("dArrSub", a.arrive != null ? `at your pace${rt && rt.pct != null ? ` · car says ${Math.round(rt.pct)}%` : ""}` : rt && rt.pct != null ? "the car's estimate" : "");
+      const eta = rt && rt.min != null ? new Date(Date.now() + rt.min * 60000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
+      txt("dArrTo", [rt ? (rt.name ? rt.name.split(",")[0] : "Route") : "Range goal", `${fx(U.dist(a.left), 1)} ${U.d} to go`, eta].filter(Boolean).join(" · "));
+    }
     // This drive: from where the current drive started (it starts when the car moves, as drive summaries do).
     const cur = drives.current, odo = L.odoMi ?? app.synthOdo, t = app.trip;
     const dmi = cur && odo != null ? Math.max(0, odo - cur.odo) : null, kwh = cur && t ? t.drive - cur.drive : null;
@@ -665,6 +676,9 @@
       L.speedMph = ds.speed || 0;
       L.gear = ds.shift_state || (ds.speed ? null : "P");    // no shift state while it sits (or sleeps): parked
       L.outsideC = typeof (st.climate_state || {}).outside_temp === "number" ? st.climate_state.outside_temp : null;
+      // The car's navigation route, while one is set: miles and minutes to go, and the car's own arrival charge %.
+      L.route = ds.active_route_miles_to_arrival > 0 ? { mi: ds.active_route_miles_to_arrival, min: ds.active_route_minutes_to_arrival ?? null,
+        pct: ds.active_route_energy_at_arrival ?? null, name: ds.active_route_destination || null } : null;
       if (typeof vs.odometer === "number") L.odoMi = vs.odometer;
       // No full-pack figure on some cars: estimate it from what's left and the charge (20%+, so a step is a small error).
       L.fullEst = bat.nominal_full_pack_energy == null;
@@ -798,23 +812,29 @@
         set2("gClim", cw < 0.15 ? `off · 0 ${U.d}/hr` : `${cw.toFixed(1)} kW · −${U.dist(mph).toFixed(1)} ${U.d}/hr`, cw > 3 ? "bad" : cw > 1.5 ? "warn" : "good");
       } else { txt("gClimL", `Climate${out != null ? ` · ${out}${U.t} out` : ""}`); set2("gClim", app.source === "tessie" && !inCar ? "needs the adapter" : "—", ""); }
     }
-    // 3. Range goal: energy budget per mile to arrive with the buffer intact.
-    // A goal covers one stretch of driving: it clears itself a day after it was set. Set before the car was connected,
-    // it counts from the first odometer reading.
+    // 3. Range goal: energy budget per mile to arrive with the buffer intact. While the car's navigation has a route
+    // (Tessie), the goal follows it: the miles left come from the car. A goal set here covers one stretch of driving:
+    // it clears itself a day after it was set. Set before the car was connected, it counts from the first odometer reading.
     if (cfg.goal && Date.now() - cfg.goal.at > 864e5) { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); lastChart = 0; }
-    const g = cfg.goal;
-    if (!g) { txt("gGoalL", "Range goal"); set2("gGoal", "Set a goal", ""); return; }
-    if (g.odo0 == null && L.odoMi != null) { g.odo0 = L.odoMi; store(KEY.cfg, cfg); }
-    const done = L.odoMi != null && g.odo0 != null ? Math.max(0, L.odoMi - g.odo0) : 0;
-    const left = Math.max(0, g.mi - done);
-    txt("gGoalL", `Goal ${Math.round(U.dist(g.mi))} ${U.d} · ${U.dist(left).toFixed(1)} left`);
+    const g = cfg.goal, rt = app.source === "tessie" ? L.route : null;
+    app.goal = null;                                       // what Drive view's Arrival row shows
+    if (!g && !rt) { txt("gGoalL", "Range goal"); set2("gGoal", "Set a goal", ""); return; }
+    let left;
+    if (rt) { left = rt.mi; txt("gGoalL", `${rt.name ? `To ${rt.name.split(",")[0]}` : "Route"} · ${U.dist(left).toFixed(1)} ${U.d} left`); }
+    else {
+      if (g.odo0 == null && L.odoMi != null) { g.odo0 = L.odoMi; store(KEY.cfg, cfg); }
+      const done = L.odoMi != null && g.odo0 != null ? Math.max(0, L.odoMi - g.odo0) : 0;
+      left = Math.max(0, g.mi - done);
+      txt("gGoalL", `Goal ${Math.round(U.dist(g.mi))} ${U.d} · ${U.dist(left).toFixed(1)} left`);
+    }
+    app.goal = { left, arrive: null, rt };
     if (usable == null || left < 0.1) { set2("gGoal", left < 0.1 ? "Made it" : "waiting for battery data", left < 0.1 ? "good" : ""); return; }
     const budget = (usable * 1000) / left;
     app.budgetWh = budget;
     const pace = basis > 50 ? basis : tg && tg.whTarget;
     const full = L.fullPackKWh || null;
     if (!pace) { set2("gGoal", `budget ${Math.round(U.wh(budget))} ${U.e}`, ""); return; }
-    const arrive = full ? Math.max(0, ((usable - (left * pace) / 1000) / full) * 100) : null;
+    const arrive = (app.goal.arrive = full ? Math.max(0, ((usable - (left * pace) / 1000) / full) * 100) : null);
     if (pace <= budget) set2("gGoal", `On budget${arrive != null ? ` · arrive ~${Math.round(arrive)}%` : ""}`, budget - pace > 40 ? "good" : "warn");
     else {
       const ok = tg && tg.rows.filter(r => r.wh <= budget * 0.95 && r.mph >= 25).sort((a, b) => b.mph - a.mph)[0];
@@ -1351,7 +1371,7 @@
     }
     const other = Object.keys(app.idStats).map(Number).filter(id => !LISTEN.includes(id));
     if (other.length) lines.push(`Other IDs seen: ${other.map(i => i.toString(16).toUpperCase()).join(", ")}`);
-    lines.push("", "Decoded now:", JSON.stringify({ ...L, bricks: `${L.bricks.filter(v => v != null).length}/108` }, (k, v) => (typeof v === "number" ? +v.toFixed(3) : v)));
+    lines.push("", "Decoded now:", JSON.stringify({ ...L, route: L.route && { ...L.route, name: L.route.name && "(hidden)" }, bricks: `${L.bricks.filter(v => v != null).length}/108` }, (k, v) => (typeof v === "number" ? +v.toFixed(3) : v)));
     lines.push("", "Adapter commands:", ...((app.link && app.link.log) || ["—"]));
     lines.push("", "Other adapter output:", ...(app.rawLines.length ? app.rawLines : ["—"]));
     lines.push("", "Tessie commands:", ...(app.cmdLog && app.cmdLog.length ? app.cmdLog : ["—"]));
