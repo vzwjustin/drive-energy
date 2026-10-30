@@ -34,6 +34,20 @@ To try it locally on a desktop first, run `npx serve .` in this folder. Desktop 
 
 On later visits, Chrome remembers the adapter, so **Connect car** skips the chooser.
 
+## Max-range guide
+
+Everything below is driven by **your car's own steady-cruise data** (the coach's speed table at the current outside temperature), falling back to rated consumption until enough data exists.
+
+- **Power meter target bands (green):**
+  - Up: efficient draw = the power that holding this speed costs you, plus a gentle-acceleration allowance (~0.06 g).
+  - Down: gentle regen = up to 60% of the BMS regen limit (35 kW max).
+  - The bar turns teal inside the band, amber above it, and red past about 1.8× the band. Regen past the gentle band turns amber.
+- **Right now (Wh/mi)** turns green within 10% of the target for this speed, amber up to 40% over, and red beyond.
+- **Range vs rated:** projected range at your pace minus the car's rated range. Positive means you're beating the car's estimate.
+- **Best speed:** your most efficient 5-mph band, plus how many miles slowing to it would add right now.
+- **Range goal:** tap it and enter the miles you need. It shows the Wh/mi budget to get there, whether you're on budget, the arrival battery %, and if you're over, the speed to slow to (the fastest band in your data that fits the budget). A dotted budget line appears on the chart.
+- **Drive view** (header button): hides everything except the meter, numbers, guide chips and coaching tip, all enlarged for a quick glance, and keeps the screen on.
+
 ## Range coach (needs the adapter)
 
 Same rules, thresholds and wording as EcoLab's `RangeCoach` (github.com/vzwjustin/eco, `core/sim/RangeCoach.kt`), so both apps coach the same way. Listen-only.

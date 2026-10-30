@@ -144,6 +144,31 @@ details summary{cursor:pointer;color:var(--muted);font-size:13.5px}
 .sbar{height:8px;background:var(--raised);border-radius:4px;overflow:hidden}
 .sbar i{display:block;height:100%;background:var(--rated)}
 .srow.sweet .sbar i{background:var(--energy)} .srow.cur{border-color:var(--fg)}
+/* Max-range guide strip */
+.guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.gchip{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:12px;background:var(--raised);border:1px solid var(--line);text-align:left;min-width:0}
+.gbtn{cursor:pointer;font:inherit;color:inherit}
+.glabel{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.gval{font:600 15.5px/1.25 var(--f-num);font-variant-numeric:tabular-nums}
+.gchip[data-tone="good"]{border-color:var(--regen)} .gchip[data-tone="good"] .gval{color:var(--regen)}
+.gchip[data-tone="warn"]{border-color:var(--warn)} .gchip[data-tone="bad"]{border-color:var(--bad)} .gchip[data-tone="bad"] .gval{color:var(--bad)}
+@media (max-width:560px){.guide{grid-template-columns:1fr 1fr}.guide .gbtn{grid-column:1/-1}}
+.goalform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.goalform label{font-size:13px;color:var(--muted);width:100%}
+.goalform input{flex:1 1 120px;background:var(--raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:16px var(--f-num)}
+.stat .v[data-tone="good"]{color:var(--regen)} .stat .v[data-tone="warn"]{color:var(--warn)} .stat .v[data-tone="bad"]{color:var(--bad)}
+/* Target band on the power meter: green = efficient draw for this speed, or gentle regen */
+.mband{position:absolute;left:0;right:0;background:color-mix(in srgb,var(--regen) 18%,transparent)}
+.mup .mband{bottom:0;border-top:2px solid var(--regen)} .mdown .mband{top:0;border-bottom:2px solid var(--regen)}
+.mup .mfill[data-tone="ok"]{background:linear-gradient(to top,var(--regen),color-mix(in srgb,var(--regen) 70%,var(--fg)))}
+.mup .mfill[data-tone="way"]{background:var(--bad)}
+.mdown .mfill[data-tone="hard"]{background:var(--warn)}
+/* Drive view: only what helps while driving */
+body.drive .grid, body.drive .tools, body.drive #diagPanel, body.drive footer, body.drive .notice[data-tone="info"]{display:none!important}
+body.drive .mbody{min-height:58vh} body.drive .mtrack{width:40px} body.drive .meter{width:92px} body.drive .mnow{font-size:26px}
+body.drive .tip{font-size:23px;min-height:64px} body.drive .tip2{font-size:16px}
+body.drive .gval{font-size:19px}
+#driveBtn[aria-pressed="true"]{background:var(--regen);border-color:var(--regen);color:#08130f}
 .diagtext{font:12px/1.45 ui-monospace,Menlo,Consolas,monospace;background:var(--raised);border-radius:10px;padding:12px;overflow-x:auto;white-space:pre;max-height:420px;overflow-y:auto;user-select:text;-webkit-user-select:text}
 footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:12.5px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -160,6 +185,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <button class="btn primary" id="connectBtn" type="button">Connect car</button>
       <button class="btn" id="disconnectBtn" type="button" hidden>Disconnect</button>
       <button class="btn" id="tessieBtn" type="button">Tessie</button>
+      <button class="btn" id="driveBtn" type="button" aria-pressed="false">Drive view</button>
       <button class="btn" id="demoBtn" type="button">Demo</button>
     </div>
   </header>
@@ -171,8 +197,8 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <div class="mtitle">kW</div>
       <div class="mbody">
         <div class="mtrack">
-          <div class="mhalf mup"><div class="mfill" id="mUp"></div></div>
-          <div class="mhalf mdown"><div class="mfill" id="mDown"></div><div class="mlimit" id="mLimit" hidden></div></div>
+          <div class="mhalf mup"><div class="mband" id="mBandUp" hidden></div><div class="mfill" id="mUp"></div></div>
+          <div class="mhalf mdown"><div class="mband" id="mBandDn" hidden></div><div class="mfill" id="mDown"></div><div class="mlimit" id="mLimit" hidden></div></div>
           <div class="mpeak" id="mPeak" hidden></div>
           <div class="mzero"></div>
         </div>
@@ -192,6 +218,17 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
       <div class="ptrack" aria-hidden="true"><div class="pgreen"></div><div class="pfill" id="pedalFill"></div></div>
       <div class="pscale" aria-hidden="true"><span style="left:15%">15</span><span style="left:40%">40%</span></div>
     </div>
+    <div class="guide" aria-label="Max-range guide">
+      <div class="gchip" id="gRange"><span class="glabel">Range vs rated</span><span class="gval" id="gRangeV">—</span></div>
+      <div class="gchip" id="gSpeed"><span class="glabel">Best speed</span><span class="gval" id="gSpeedV">—</span></div>
+      <button class="gchip gbtn" id="gGoal" type="button"><span class="glabel" id="gGoalL">Range goal</span><span class="gval" id="gGoalV">Set a goal</span></button>
+    </div>
+    <form class="goalform" id="goalForm" hidden>
+      <label for="goalMi">Miles you need to make</label>
+      <input id="goalMi" type="number" min="1" max="400" inputmode="numeric" placeholder="e.g. 45">
+      <button class="btn primary" type="submit">Set goal</button>
+      <button class="btn" id="goalClear" type="button">Clear</button>
+    </form>
     <p class="tip" id="tip" data-tone="idle" aria-live="polite">Connect the car to start coaching.</p>
     <p class="tip2" id="tip2"></p>
     </div>
@@ -284,7 +321,7 @@ footer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:
     </div>
   </section>
 
-  <section class="panel">
+  <section class="panel" id="diagPanel">
     <details id="diag">
       <summary>Diagnostics · what the adapter is sending</summary>
       <p class="note">If readings are missing, connect the car, wait 20 seconds, then tap Copy diagnostics and paste it to Claude.</p>

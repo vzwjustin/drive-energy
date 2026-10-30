@@ -11,7 +11,7 @@
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
   const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
 
-  const cfg = Object.assign({ win: 15, brick: 38, oneBased: true, keepAwake: true }, load(KEY.cfg, {}));
+  const cfg = Object.assign({ win: 15, brick: 38, oneBased: true, keepAwake: true, drive: false, goal: null }, load(KEY.cfg, {}));
   let dec = D.createDecoder(), L = dec.state;
   const app = {
     source: null, link: null, port: null, sim: null, simTimer: null,
@@ -152,6 +152,7 @@
       }
       if ((app.source === "car" || app.source === "tessie") && now - app.lastSave > 10000) { store(tripKey(app.source), t); app.lastSave = now; }
     }
+    app.tgt = app.source ? computeTargets() : null;
     if (live && (app.source === "car" || app.source === "demo")) app.coach.update({
       pedal: L.pedalPct, kw: app.pEma, mph: L.speedMph, brake: L.brakeOn, gear: L.gear, soc: L.socUI ?? L.uiSOC,
       tMin: L.packTminC, tMax: L.packTmaxC, hvacKw: L.compressorKW, regenLimitKw: L.maxRegenKW, grade: L.gradePct, outsideC: L.outsideC,
@@ -181,6 +182,8 @@
     // consumption
     const inst = p != null && mph > 3 ? (p * 1000) / mph : null;
     set("inst", fx(inst), "Wh/mi");
+    const tg = app.tgt;
+    $("inst").dataset.tone = inst == null || !tg || !tg.whTarget ? "" : inst <= tg.whTarget * 1.1 ? "good" : inst <= tg.whTarget * 1.4 ? "warn" : "bad";
     $("instSub").textContent = mph != null ? `${fx(mph)} mph` : "—";
     const tripMi = t ? t.lastOdo - t.odo0 : 0, tripAvg = t && tripMi > 0.3 ? (t.drive * 1000) / tripMi : null;
     const wAvg = windowAvg(t, cfg.win);
@@ -191,6 +194,7 @@
     const basis = wAvg ?? tripAvg;
     set("proj", usable != null && basis > 50 ? fx((usable * 1000) / basis) : fx(L.ratedRangeMi), "mi");
     $("projSub").textContent = usable != null && basis > 50 ? `at ${Math.round(basis)} Wh/mi · rated ${fx(L.ratedRangeMi)} mi` : "rated range";
+    renderGuide(usable, basis);
     // battery
     const soc = L.socUI ?? L.uiSOC;
     $("battFill").style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`; $("battPct").textContent = soc != null ? `${fx(soc, 1)}%` : "—";
@@ -311,7 +315,8 @@
     }
     const narrow = box.clientWidth < 520, W = narrow ? 380 : 640, H = narrow ? 220 : 260, Lp = 40, R = 10, T = 16, B = 24;
     const iw = W - Lp - R, ih = H - T - B, ys = pts.map(p => p.y), rated = ratedWh();
-    const top = Math.max(400, Math.ceil(Math.max(...ys, rated || 0) / 100) * 100), bot = Math.min(0, Math.floor(Math.min(...ys) / 100) * 100);
+    const budget = cfg.goal && app.budgetWh > 50 && app.budgetWh < 900 ? app.budgetWh : null;
+    const top = Math.max(400, Math.ceil(Math.max(...ys, rated || 0, budget || 0) / 100) * 100), bot = Math.min(0, Math.floor(Math.min(...ys) / 100) * 100);
     const X = x => Lp + (x / w) * iw, Y = y => T + ((top - Math.max(bot, Math.min(top, y))) / (top - bot)) * ih;
     let g = "";
     for (let v = bot; v <= top; v += 100) g += `<line x1="${Lp}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${Lp - 7}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
@@ -322,6 +327,7 @@
     box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Consumption over the last ${w} miles">${g}
       <path d="${line}L${X(l.x).toFixed(1)},${z}L${X(f.x).toFixed(1)},${z}Z" fill="var(--energy-soft)"/>
       ${rated ? `<line x1="${Lp}" x2="${W - R}" y1="${Y(rated)}" y2="${Y(rated)}" stroke="var(--rated)" stroke-width="1.5" stroke-dasharray="5 5"/>` : ""}
+      ${budget ? `<line x1="${Lp}" x2="${W - R}" y1="${Y(budget)}" y2="${Y(budget)}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="2 4"/><text x="${W - R}" y="${Y(budget) - 5}" text-anchor="end" style="fill:var(--warn)">goal budget ${Math.round(budget)}</text>` : ""}
       <path d="${line}" fill="none" stroke="var(--energy)" stroke-width="2.25" stroke-linejoin="round"/>
       <circle cx="${X(l.x)}" cy="${Y(l.y)}" r="5" fill="var(--energy)" stroke="var(--surface)" stroke-width="2"/>
       <text x="${X(l.x) - 8}" y="${Y(l.y) - 10}" text-anchor="end" style="fill:var(--fg);font-weight:600">${Math.round(l.y)}</text></svg>`;
@@ -393,6 +399,67 @@
     notice(`Couldn't reach Tessie (${e && e.message ? e.message : "network"}). Retrying every 10 seconds.`, "warn");
   }
 
+  /* ---------------- max-range guidance ----------------
+     Targets come from this car's own steady-cruise data (coach speed table, same outside-temperature band),
+     falling back to rated consumption. Efficient draw = what holding this speed costs + a gentle-acceleration
+     allowance (~0.06 g). Gentle regen = up to 60% of the BMS regen limit (max 35 kW). */
+  const MASS_KG = 1850;
+  function computeTargets() {
+    const mph = L.speedMph ?? 0, { rows, sweet } = app.coach.table(L.outsideC);
+    const here = rows.find(r => r.mph === Math.floor(mph / 5) * 5), rated = ratedWh();
+    const whTarget = here ? here.wh : rated;
+    const cruiseKW = whTarget && mph > 3 ? (whTarget * mph) / 1000 : 1;
+    const accelKW = Math.max(8, (MASS_KG * 0.6 * (mph / 2.2369363)) / 1000);
+    const regenLim = L.maxRegenKW > 5 ? L.maxRegenKW : 60;
+    return { mph, whTarget, cruiseKW, upKW: cruiseKW + accelKW, regenGentle: Math.min(35, 0.6 * regenLim), rows, sweet, here };
+  }
+
+  function renderGuide(usable, basis) {
+    const tg = app.tgt, set2 = (id, text, tone) => { $(id + "V").textContent = text; $(id).dataset.tone = tone || ""; };
+    // 1. Range vs the car's own rated estimate, at your current pace.
+    if (usable != null && basis > 50 && L.ratedRangeMi > 0) {
+      const d = Math.round((usable * 1000) / basis - L.ratedRangeMi);
+      set2("gRange", `${d >= 0 ? "+" : "−"}${Math.abs(d)} mi`, d >= 0 ? "good" : d > -15 ? "warn" : "bad");
+    } else set2("gRange", "drive to see", "");
+    // 2. Best speed from your data, and what it's worth right now.
+    if (tg && tg.sweet) {
+      const s = tg.sweet, here = tg.here;
+      if (usable != null && here && here.mph > s.mph && tg.mph > 3) {
+        const gain = Math.round((usable * 1000) / s.wh - (usable * 1000) / here.wh);
+        set2("gSpeed", gain >= 1 ? `${s.mph}–${s.mph + 4} mph: +${gain} mi` : `${s.mph}–${s.mph + 4} mph`, gain >= 5 ? "warn" : "good");
+      } else set2("gSpeed", `${s.mph}–${s.mph + 4} mph · ${Math.round(s.wh)} Wh/mi`, here && here.mph === s.mph ? "good" : "");
+    } else set2("gSpeed", "learning…", "");
+    // 3. Range goal: energy budget per mile to arrive with the buffer intact.
+    const g = cfg.goal;
+    if (!g) { $("gGoalL").textContent = "Range goal"; set2("gGoal", "Set a goal", ""); return; }
+    const done = L.odoMi != null && g.odo0 != null ? Math.max(0, L.odoMi - g.odo0) : 0;
+    const left = Math.max(0, g.mi - done);
+    $("gGoalL").textContent = `Goal ${g.mi} mi · ${left.toFixed(1)} left`;
+    if (usable == null || left < 0.1) { set2("gGoal", left < 0.1 ? "Made it" : "waiting for battery data", left < 0.1 ? "good" : ""); return; }
+    const budget = (usable * 1000) / left;
+    app.budgetWh = budget;
+    const pace = basis > 50 ? basis : tg && tg.whTarget;
+    const full = L.fullPackKWh || null;
+    if (!pace) { set2("gGoal", `budget ${Math.round(budget)} Wh/mi`, ""); return; }
+    const arrive = full ? Math.max(0, ((usable - (left * pace) / 1000) / full) * 100) : null;
+    if (pace <= budget) set2("gGoal", `On budget${arrive != null ? ` · arrive ~${Math.round(arrive)}%` : ""}`, budget - pace > 40 ? "good" : "warn");
+    else {
+      const ok = tg && tg.rows.filter(r => r.wh <= budget * 0.95 && r.mph >= 25).sort((a, b) => b.mph - a.mph)[0];
+      set2("gGoal", ok ? `Over by ${Math.round(pace - budget)} Wh/mi · slow to ~${ok.mph + 4} mph` : `Over by ${Math.round(pace - budget)} Wh/mi · ease off`, "bad");
+    }
+  }
+
+  $("gGoal").addEventListener("click", () => { const f = $("goalForm"); f.hidden = !f.hidden; if (!f.hidden) { $("goalMi").value = cfg.goal ? cfg.goal.mi : ""; $("goalMi").focus(); } });
+  $("goalForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const mi = Math.round(+$("goalMi").value);
+    if (mi >= 1 && mi <= 400) { cfg.goal = { mi, odo0: L.odoMi ?? null, at: Date.now() }; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); }
+  });
+  $("goalClear").addEventListener("click", () => { cfg.goal = null; app.budgetWh = null; store(KEY.cfg, cfg); $("goalForm").hidden = true; lastChart = 0; render(true); });
+  function setDrive(on) { cfg.drive = on; store(KEY.cfg, cfg); document.body.classList.toggle("drive", on); $("driveBtn").setAttribute("aria-pressed", String(on)); if (on) keepAwake(); }
+  $("driveBtn").addEventListener("click", () => setDrive(!cfg.drive));
+  setDrive(!!cfg.drive);
+
   /* ---------------- vertical power meter ----------------
      Animated every display frame from the raw pack power (not the 250 ms tick), lightly smoothed.
      Up = power drawn (scale tops out at the car's discharge limit), down = regen (scale bottoms out at the
@@ -418,7 +485,12 @@
     const target = live && L.powerKW != null ? L.powerKW : 0;
     meter.v += (target - meter.v) * Math.min(1, dt / 0.12);
     const sc = meterScales(); drawTicks(sc);
-    const f = meterFrac(meter.v, sc);
+    const f = meterFrac(meter.v, sc), tg = app.tgt, moving = live && tg && tg.mph > 3;
+    const bu = $("mBandUp"), bd = $("mBandDn");
+    bu.hidden = bd.hidden = !moving;
+    if (moving) { bu.style.height = `${meterFrac(tg.upKW, sc) * 100}%`; bd.style.height = `${meterFrac(-tg.regenGentle, sc) * 100}%`; }
+    $("mUp").dataset.tone = !moving ? "" : meter.v <= tg.upKW ? "ok" : meter.v <= tg.upKW * 1.8 ? "" : "way";
+    $("mDown").dataset.tone = moving && -meter.v > tg.regenGentle ? "hard" : "";
     $("mUp").style.transform = `scaleY(${meter.v > 0 ? f : 0})`;
     $("mDown").style.transform = `scaleY(${meter.v < 0 ? f : 0})`;
     // Peak hold: the strongest pull or regen of the last 2 s.
